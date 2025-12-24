@@ -5,6 +5,7 @@
 #include "stdafx.h"
 #include "ServerListManager.h"
 #include "./Utilities/Log/ErrorReport.h"
+#include "./Utilities/Log/muConsoleDebug.h"
 
 CServerListManager::CServerListManager()
 {
@@ -43,6 +44,9 @@ void CServerListManager::LoadServerListScript()
 
 	if (fp == NULL)
 	{
+#ifdef CONSOLE_DEBUG
+		g_ConsoleDebug->Write(MCD_ERROR, "LoadServerListScript - Missing file: Data\\Local\\ServerList.bmd");
+#endif
 		gwinhandle->SendWindowMessage("Data\\Local\\ServerList.bmd file not found.\r\n", true);
 		return;
 	}

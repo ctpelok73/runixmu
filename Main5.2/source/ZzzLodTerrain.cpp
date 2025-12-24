@@ -1,5 +1,5 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Terrain °ü·Ã ÇÔ¼ö
+// Terrain ï¿½ï¿½ï¿½ï¿½ ï¿½Ô¼ï¿½
 ///////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
@@ -154,6 +154,9 @@ int OpenTerrainAttribute(char* FileName)
 
 	if (fp == NULL)
 	{
+#ifdef CONSOLE_DEBUG
+		g_ConsoleDebug->Write(MCD_ERROR, "OpenTerrainAttribute - Missing file: %s", FileName);
+#endif
 		return (-1);
 	}
 
@@ -388,6 +391,9 @@ int Open_Camera_Angle_Position(char* WorldName)
 
 	if (fp == NULL)
 	{
+#ifdef CONSOLE_DEBUG
+		g_ConsoleDebug->Write(MCD_ERROR, "Open_Camera_Angle_Position - Missing file: %s", FileName);
+#endif
 		return (0);
 	}
 
@@ -446,6 +452,9 @@ int OpenTerrainMapping(char* FileName)	//
 
 	if (fp == NULL)
 	{
+#ifdef CONSOLE_DEBUG
+		g_ConsoleDebug->Write(MCD_ERROR, "OpenTerrainMapping - Missing file: %s", FileName);
+#endif
 		return (-1);
 	}
 
@@ -717,8 +726,8 @@ void pull_extension(std::string& fileName, const char* ext)
 	size_t dotPosition = fileName.find_last_of('.');
 	if (dotPosition != std::string::npos)
 	{
-		fileName.erase(dotPosition + 1);  // Elimina la extensión existente
-		fileName += ext;  // Agrega la nueva extensión
+		fileName.erase(dotPosition + 1);  // Elimina la extensiï¿½n existente
+		fileName += ext;  // Agrega la nueva extensiï¿½n
 	}
 }
 

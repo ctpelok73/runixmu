@@ -5,6 +5,7 @@
 #include "stdafx.h"
 #include "QuestMng.h"
 #include "./Utilities/Log/ErrorReport.h"
+#include "./Utilities/Log/muConsoleDebug.h"
 #include "wsclientinline.h"
 
 #include <crtdbg.h>
@@ -48,6 +49,9 @@ void CQuestMng::LoadNPCDialogueScript()
 	FILE* fp = ::fopen(QM_NPCDIALOGUE_FILE, "rb");
 	if (fp == NULL)
 	{
+#ifdef CONSOLE_DEBUG
+		g_ConsoleDebug->Write(MCD_ERROR, "LoadNPCDialogueScript - Missing file: %s", QM_NPCDIALOGUE_FILE);
+#endif
 		gwinhandle->SendWindowMessage("%s file not found.\r\n", true, QM_NPCDIALOGUE_FILE);
 		return;
 	}
@@ -75,6 +79,9 @@ void CQuestMng::LoadQuestProgressScript()
 	FILE* fp = ::fopen(QM_QUESTPROGRESS_FILE, "rb");
 	if (fp == NULL)
 	{
+#ifdef CONSOLE_DEBUG
+		g_ConsoleDebug->Write(MCD_ERROR, "LoadQuestProgressScript - Missing file: %s", QM_QUESTPROGRESS_FILE);
+#endif
 		gwinhandle->SendWindowMessage("%s file not found.\r\n", true, QM_QUESTPROGRESS_FILE);
 		return;
 	}
@@ -102,6 +109,9 @@ void CQuestMng::LoadQuestWordsScript()
 	FILE* fp = ::fopen(QM_QUESTWORDS_FILE, "rb");
 	if (fp == NULL)
 	{
+#ifdef CONSOLE_DEBUG
+		g_ConsoleDebug->Write(MCD_ERROR, "LoadQuestWordsScript - Missing file: %s", QM_QUESTWORDS_FILE);
+#endif
 		gwinhandle->SendWindowMessage("%s file not found.\r\n", true, QM_QUESTWORDS_FILE);
 		return;
 	}

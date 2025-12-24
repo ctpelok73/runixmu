@@ -45,6 +45,7 @@
 #include "w_MapHeaders.h"
 #include "MonkSystem.h"
 #include "CGMProtect.h"
+#include "./Utilities/Log/muConsoleDebug.h"
 #include "CGMItemWings.h"
 #include "CGMItemDropName.h"
 #include "CGMRenderGroupMesh.h"
@@ -948,7 +949,7 @@ void Draw_RenderObject(OBJECT* o, bool Translate, int Select, int ExtraMon)
 
 					Vector(1.0f, 0.0f, 0.0f, vLight);
 					Vector((float)(rand() % 10 - 10) * 0.5f, 0.f, (float)(rand() % 40 - 20) * 0.5f, vPos);
-					b->TransformPosition(BoneTransform[14], vPos, vPosition, false);	// ÅÎ
+					b->TransformPosition(BoneTransform[14], vPos, vPosition, false);	// ï¿½ï¿½
 					CreateParticleSync(BITMAP_SPARK + 1, vPosition, o->Angle, vLight, 15, 0.7f + (fLuminosity * 0.05f));
 				}
 				b->StreamMesh = -1;
@@ -2420,7 +2421,7 @@ void Draw_RenderObject(OBJECT* o, bool Translate, int Select, int ExtraMon)
 					b->RenderMesh(2, RENDER_TEXTURE, o->Alpha, o->BlendMesh, o->BlendMeshLight, o->BlendMeshTexCoordU, o->BlendMeshTexCoordV);
 					b->RenderMesh(3, RENDER_TEXTURE, o->Alpha, o->BlendMesh, o->BlendMeshLight, o->BlendMeshTexCoordU, o->BlendMeshTexCoordV);
 					b->RenderMesh(4, RENDER_TEXTURE, o->Alpha, o->BlendMesh, o->BlendMeshLight, o->BlendMeshTexCoordU, o->BlendMeshTexCoordV);
-					// ³¯°³
+					// ï¿½ï¿½ï¿½ï¿½
 					Vector(1.0f, 1.0f, 1.0f, b->BodyLight);
 					b->RenderMesh(5, RENDER_TEXTURE, o->Alpha, o->BlendMesh, o->BlendMeshLight, o->BlendMeshTexCoordU, o->BlendMeshTexCoordV);
 					b->RenderMesh(5, RENDER_TEXTURE | RENDER_BRIGHT, o->Alpha, 5, 0.1f, o->BlendMeshTexCoordU, o->BlendMeshTexCoordV);
@@ -5610,6 +5611,9 @@ int OpenObjects(char* FileName)
 	FILE* fp = fopen(FileName, "rb");
 	if (fp == NULL)
 	{
+#ifdef CONSOLE_DEBUG
+		g_ConsoleDebug->Write(MCD_ERROR, "OpenObjects - Missing file: %s", FileName);
+#endif
 		char Text[256];
 		sprintf(Text, "%s file not found.", FileName);
 		MessageBox(gwinhandle->GethWnd(), Text, NULL, MB_OK);
@@ -5654,6 +5658,9 @@ int OpenObjectsEnc(char* FileName)
 
 	if (fp == NULL)
 	{
+#ifdef CONSOLE_DEBUG
+		g_ConsoleDebug->Write(MCD_ERROR, "OpenObjectsEnc - Missing file: %s", FileName);
+#endif
 		return (-1);
 	}
 

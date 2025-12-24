@@ -40,15 +40,12 @@ typedef NTSTATUS(NTAPI* lpNtAllocateVirtualMemory)(HANDLE ProcessHandle, PVOID* 
 	#define ENABLE_EDIT
 	#define ENABLE_EDIT2
 	//#define DEBUG_BITMAP_CACHE
+	#define CONSOLE_DEBUG
+	#define CSK_LH_DEBUG_CONSOLE
 #endif // _DEBUG
 
 #ifdef FOR_WORK
 #ifdef _DEBUG
-
-	#define CSK_LH_DEBUG_CONSOLE
-	#ifdef CSK_LH_DEBUG_CONSOLE
-		#define CONSOLE_DEBUG
-	#endif // CSK_LH_DEBUG_CONSOLE
 
 	#define CSK_DEBUG_MAP_ATTRIBUTE
 

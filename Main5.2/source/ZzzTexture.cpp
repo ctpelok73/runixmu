@@ -5,6 +5,7 @@
 #include <setjmp.h>
 #include "ZzzTexture.h"
 #include "./Utilities/Log/ErrorReport.h"
+#include "./Utilities/Log/muConsoleDebug.h"
 #include "WSclient.h"
 #include "DSPlaySound.h"
 #include "Jpeglib.h"
@@ -77,6 +78,9 @@ void SaveImage(int HeaderSize, char* Ext, char* filename, BYTE* PakBuffer, int S
 		FILE* fp = fopen(OpenFileName, "rb");
 		if (fp == NULL)
 		{
+#ifdef CONSOLE_DEBUG
+			g_ConsoleDebug->Write(MCD_ERROR, "SaveImage - Missing file: %s", OpenFileName);
+#endif
 			return;
 		}
 		fseek(fp, 0, SEEK_END);
