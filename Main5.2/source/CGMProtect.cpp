@@ -9,6 +9,8 @@
 #include "CGMJewelOfAction.h"
 #include "CGMPhysicsManager.h"
 #include "CGMRenderGroupMesh.h"
+#include "SummonSystem.h"
+#include "ZzzCharacter.h"
 #include "..\\..\\..\\Util\\CCRC32.H"
 
 #include <tlhelp32.h>
@@ -701,6 +703,33 @@ void CGMProtect::LoadingProgressive()
 	CustomPetEffectDinamic.clear();
 
 	CustomDefaultRenderMesh.clear();
+}
+
+void CGMProtect::RefreshItemEffects()
+{
+	GMItemEffect->LoadDataEffect(0, CustomEffectStatics.data(), CustomEffectStatics.size());
+
+	GMItemEffect->LoadDataEffect(1, CustomEffectDinamic.data(), CustomEffectDinamic.size());
+
+	GMItemEffect->LoadDataEffect(0, CustomPetEffectStatics.data(), CustomPetEffectStatics.size());
+
+	GMItemEffect->LoadDataEffect(1, CustomPetEffectDinamic.data(), CustomPetEffectDinamic.size());
+}
+
+void CGMProtect::RefreshCharacterEquipmentEffects()
+{
+	for (int i = 0; i < MAX_CHARACTERS_CLIENT; i++)
+	{
+		CHARACTER* pCharacter = gmCharacters->GetCharacter(i);
+		if (pCharacter && pCharacter->Object.Live && pCharacter->Object.Visible)
+		{
+			// Refresh summon equipment effects for all characters
+			if (pCharacter->Weapon[1].Type >= 0)
+			{
+				g_SummonSystem.MoveEquipEffect(pCharacter, pCharacter->Weapon[1].Type, pCharacter->Weapon[1].Level, pCharacter->Weapon[1].Option1);
+			}
+		}
+	}
 }
 
 void CGMProtect::runtime_open_module_crc32(std::string FileName, DWORD _crc32)

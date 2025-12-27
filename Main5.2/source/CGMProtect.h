@@ -181,6 +181,8 @@ public:
 	bool IsRenderWave(const char* Name);
 
 	void LoadingProgressive();
+	void RefreshItemEffects();
+	void RefreshCharacterEquipmentEffects();
 	void runtime_checked_crc32();
 	void runtime_open_module_crc32(std::string FileName, DWORD _crc32);
 #ifdef MAX_INSTANCE_GAME

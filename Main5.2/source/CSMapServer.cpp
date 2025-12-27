@@ -95,5 +95,7 @@ void CSMServer::SendChangeMapServer(void)
 
 	ClearCharacters(-1);
 	InitGame();
+	GMProtect->RefreshItemEffects();
+	GMProtect->RefreshCharacterEquipmentEffects();
 	SendChangeMServer(LogInID, CharID, m_vServerInfo.m_iJoinAuthCode1, m_vServerInfo.m_iJoinAuthCode2, m_vServerInfo.m_iJoinAuthCode3, m_vServerInfo.m_iJoinAuthCode4);
 }
