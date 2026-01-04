@@ -1530,6 +1530,20 @@ void SEASON3B::CNewUIMacroMain::ClosingProcess()
 	m_stSkillList[1].clear();
 }
 
+static bool IsBlockedMacroSkill(int skill)
+{
+	switch (skill)
+	{
+	case 120:
+	case 121:
+	case 122:
+	case 123:
+		return true;
+	default:
+		return false;
+	}
+}
+
 void SEASON3B::CNewUIMacroMain::LoadSkillList(int sType)
 {
 	int width = 32;
@@ -1548,7 +1562,7 @@ void SEASON3B::CNewUIMacroMain::LoadSkillList(int sType)
 	{
 		Magic_Icon = CharacterAttribute->Skill[i];
 
-		if (Magic_Icon && (Magic_Icon < 67 || Magic_Icon > 72))
+		if (Magic_Icon && (Magic_Icon < 67 || Magic_Icon > 72) && !IsBlockedMacroSkill(Magic_Icon))
 		{
 			int SkillType = SkillAttribute[Magic_Icon].SkillUseType;
 
