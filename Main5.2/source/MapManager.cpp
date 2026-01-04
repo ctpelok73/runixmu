@@ -1679,7 +1679,8 @@ void CMapManager::OpenFileLeaf(const char* WorldName)
 	{
 		if (this->currentMap == WD_0LORENCIA || this->currentMap == WD_2DEVIAS || this->currentMap == WD_3NORIA)
 		{
-			sprintf(FileName, "%s\\leaf01.jpg", WorldName);
+			//sprintf(FileName, "%s\\leaf01.jpg", WorldName); 
+			sprintf(FileName, (currentMap == 0 || currentMap == 3 || currentMap == 63) ? "%s\\leaf01.tga" : "%s\\leaf01.jpg", WorldName);
 			LoadBitmap(FileName, BITMAP_LEAF1, GL_NEAREST_MIPMAP_NEAREST, GL_CLAMP_TO_EDGE, false);
 		}
 
