@@ -1,4 +1,4 @@
-﻿///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
@@ -38,6 +38,10 @@
 #include "ChangeRingManager.h"
 #include "MixMgr.h"
 #include "NewUICommonMessageBox.h"
+
+bool g_GMMenuPreviewActive = false;
+bool g_GMMenuPreviewAutoRotate = false;
+float g_GMMenuPreviewRotateY = 0.0f;
 #include "NewUICustomMessageBox.h"
 #include "NewUIInventoryCtrl.h"
 #include "GM3rdChangeUp.h"
@@ -4357,6 +4361,16 @@ void RenderItem3D(float sx, float sy, float Width, float Height, int Type, int L
 		pos[1] = RectItem3D->Y;
 
 		VectorCopy(RectItem3D->angle, ItemAngle);
+		{
+			extern bool g_GMMenuPreviewActive;
+			extern bool g_GMMenuPreviewAutoRotate;
+			extern float g_GMMenuPreviewRotateY;
+
+			if (g_GMMenuPreviewActive && g_GMMenuPreviewAutoRotate)
+			{
+				ItemAngle[1] += g_GMMenuPreviewRotateY;
+			}
+		}
 
 		CUSTOM_PET_STACK* pLStack = GMProtect->GetPetAction(Type);
 

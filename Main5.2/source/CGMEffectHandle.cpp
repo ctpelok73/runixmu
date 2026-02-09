@@ -6,6 +6,7 @@
 #include "Protocol.h"
 #include "CSItemOption.h"
 #include "ZzzInventory.h"
+#include "SocketSystem.h"
 #include "./Utilities/Log/ErrorReport.h"
 #include "./Utilities/Log/muConsoleDebug.h"
 
@@ -18,6 +19,10 @@
 #include "imgui_impl_opengl2.h"
 
 #ifdef EFFECT_MNG_HANDLE
+
+extern bool g_GMMenuPreviewActive;
+extern bool g_GMMenuPreviewAutoRotate;
+extern float g_GMMenuPreviewRotateY;
 
 SEASON3B::CGFxEffectHandle::CGFxEffectHandle()
 {
@@ -257,6 +262,19 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 	static ImVec2 s_previewRectMin = ImVec2(0, 0);
 	static ImVec2 s_previewRectMax = ImVec2(0, 0);
 	static bool s_previewHovered = false;
+	static bool s_previewAutoRotate = false;
+	static float s_previewRotY = 0.0f;
+
+	{
+		ImGuiIO& io = ImGui::GetIO();
+		if (s_previewAutoRotate)
+		{
+			const float dt = (io.DeltaTime > 0.0f) ? io.DeltaTime : 0.0f;
+			s_previewRotY += dt * 30.0f;
+			if (s_previewRotY > 360.0f)
+				s_previewRotY -= 360.0f;
+		}
+	}
 
 	ImGui::Begin("RenderMesh Tools", &GraphicImage, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse);
 
@@ -265,6 +283,14 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 
 	ImGui::BeginChild("Sub-Child1", ImVec2(0, (200.f * g_fScreenRate_y)), ImGuiChildFlags_Border);
 	{
+		ImGui::SetCursorPos(ImVec2(6.0f * g_fScreenRate_x, 6.0f * g_fScreenRate_y));
+		ImGui::Text("Preview (wheel zoom: %.0f%%)", s_previewZoom * 100.0f);
+		ImGui::SetCursorPos(ImVec2(6.0f * g_fScreenRate_x, 24.0f * g_fScreenRate_y));
+		ImGui::Checkbox("Auto rotate", &s_previewAutoRotate);
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+			ImGui::SetTooltip("Automatically rotates the preview model.");
+
+		ImGui::SetCursorPos(ImVec2(0.0f, 44.0f * g_fScreenRate_y));
 		const ImVec2 avail = ImGui::GetContentRegionAvail();
 		ImGui::InvisibleButton("##preview_capture", avail);
 		s_previewRectMin = ImGui::GetItemRectMin();
@@ -281,9 +307,6 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 				if (s_previewZoom > 3.00f) s_previewZoom = 3.00f;
 			}
 		}
-
-		ImGui::SetCursorPos(ImVec2(6.0f * g_fScreenRate_x, 6.0f * g_fScreenRate_y));
-		ImGui::Text("Preview (wheel zoom: %.0f%%)", s_previewZoom * 100.0f);
 	}
 	ImGui::EndChild();
 
@@ -316,6 +339,9 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 
 		if (item_info->Name[0] != '\0')
 		{
+			g_GMMenuPreviewAutoRotate = s_previewAutoRotate;
+			g_GMMenuPreviewRotateY = s_previewRotY;
+
 			const float previewX = s_previewRectMin.x / g_fScreenRate_x;
 			const float previewY = s_previewRectMin.y / g_fScreenRate_y;
 			const float previewW = (s_previewRectMax.x - s_previewRectMin.x) / g_fScreenRate_x;
@@ -328,13 +354,14 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 			const float itemH = (float)item_info->Getheight() * s_previewZoom;
 
 			SEASON3B::begin3D();
+			g_GMMenuPreviewActive = true;
 			RenderItem3D(
 				cx - (itemW * 0.5f),
 				cy - (itemH * 0.5f),
 				itemW,
 				itemH,
 				selectedItem,
-				0,
+				(m_SpawnLevel << 3),
 				0,
 				0,
 				false,
@@ -342,6 +369,7 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 				previewY,
 				previewW,
 				previewH);
+			g_GMMenuPreviewActive = false;
 			SEASON3B::endrender3D();
 		}
 	}
@@ -571,7 +599,35 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 		bool luck = (m_SpawnLuck != 0);
 		if (ImGui::Checkbox("Luck (+Luck)", &luck)) m_SpawnLuck = luck ? 1 : 0;
 	}
-	ImGui::SliderInt("Option (+0..+7)", &m_SpawnOption, 0, 7);
+	{
+		const int kind2 = item_info ? (int)item_info->Kind2 : 0;
+		const bool isWeapon = (kind2 >= 1 && kind2 <= 14) || kind2 == 78 || kind2 == 81 || kind2 == 84 || kind2 == 89 || kind2 == 90;
+		const bool isArmorOrShield = (kind2 >= 15 && kind2 <= 20) || kind2 == 77;
+
+		const int addValue = (m_SpawnOption < 0 ? 0 : (m_SpawnOption > 7 ? 7 : m_SpawnOption)) * 4;
+
+		char optionText[128] = { 0 };
+		if (isWeapon)
+		{
+			const int baseMin = item_info ? (int)item_info->DamageMin : 0;
+			const int baseMax = item_info ? (int)item_info->DamageMax : 0;
+			sprintf_s(optionText, "+Damage +%d  (DMG ~%d-%d)", addValue, baseMin + addValue, baseMax + addValue);
+		}
+		else if (isArmorOrShield)
+		{
+			const int baseDef = item_info ? (int)item_info->Defense : 0;
+			sprintf_s(optionText, "+Defense +%d  (DEF ~%d)", addValue, baseDef + addValue);
+		}
+		else
+		{
+			sprintf_s(optionText, "+Option +%d", addValue);
+		}
+
+		ImGui::Text("Option (+0..+7): %s", optionText);
+		ImGui::SliderInt("##gm_spawn_option", &m_SpawnOption, 0, 7);
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+			ImGui::SetTooltip("Basic option adds +Damage for weapons, +Defense for armor/shields (approx: +4 per step).");
+	}
 
 	{
 		const int kind2 = item_info ? (int)item_info->Kind2 : 0;
@@ -619,6 +675,8 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 			};
 
 		ImGui::Text("Excellent");
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+			ImGui::SetTooltip("Excellent is a bitmask of 6 options; meaning depends on item type.");
 		ImGui::PushID("exc");
 		for (int i = 0; i < 6; ++i)
 		{
@@ -634,60 +692,71 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 
 			if (ImGui::Checkbox(label, &enabled))
 				setExcBit(mask, enabled);
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+				ImGui::SetTooltip("Sends the selected excellent option bit to server (OptionEx).");
 		}
 		ImGui::PopID();
 	}
 
 	if (ImGui::CollapsingHeader("Advanced"))
 	{
-		bool ancientEnabled = (m_SpawnSet != 0);
-		if (ImGui::Checkbox("Ancient", &ancientEnabled))
-		{
-			if (ancientEnabled == false)
-			{
-				m_SpawnSet = 0;
-			}
-		}
+		char nameA[64] = { 0 };
+		char nameB[64] = { 0 };
+		const bool hasA = g_csItemOption.GetSetItemName(nameA, selectedItem, EXT_A_SET_OPTION);
+		const bool hasB = g_csItemOption.GetSetItemName(nameB, selectedItem, EXT_B_SET_OPTION);
+		const bool canAncient = (hasA || hasB);
 
-		if (ancientEnabled)
+		if (canAncient)
 		{
-			char nameA[64] = { 0 };
-			char nameB[64] = { 0 };
-			const bool hasA = g_csItemOption.GetSetItemName(nameA, selectedItem, EXT_A_SET_OPTION);
-			const bool hasB = g_csItemOption.GetSetItemName(nameB, selectedItem, EXT_B_SET_OPTION);
-
-			if (hasA == false && hasB == false)
+			bool ancientEnabled = (m_SpawnSet != 0);
+			if (ImGui::Checkbox("Ancient", &ancientEnabled))
 			{
-				m_SpawnSet = 0;
-				ImGui::TextColored(ImVec4(1.f, 0.2f, 0.2f, 1.f), "No ancient sets for this item");
+				if (ancientEnabled == false)
+					m_SpawnSet = 0;
 			}
-			else
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+				ImGui::SetTooltip("Enables Ancient (set) option for this item.");
+
+			if (ancientEnabled)
 			{
-				static int s_variant = 0; // 0=A, 1=B
-				static bool s_bonus10 = true; // false=+5, true=+10
+				static int s_variant = 0;
+				static bool s_bonus10 = true;
 
 				if (s_variant == 0 && hasA == false) s_variant = 1;
 				if (s_variant == 1 && hasB == false) s_variant = 0;
 
 				ImGui::Text("Ancient set");
-				if (hasA)
-				{
-					ImGui::RadioButton(nameA, &s_variant, 0);
-				}
-				if (hasB)
-				{
-					ImGui::RadioButton(nameB, &s_variant, 1);
-				}
+				if (hasA) ImGui::RadioButton(nameA, &s_variant, 0);
+				if (hasB) ImGui::RadioButton(nameB, &s_variant, 1);
 
 				ImGui::Checkbox("Ancient bonus +10", &s_bonus10);
+				if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+					ImGui::SetTooltip("Ancient bonus flag: +10 (bit 8) or +5 (bit 4).");
 
 				const int setIndexBits = (s_variant == 0) ? 1 : 2;
 				const int setValueBits = s_bonus10 ? 8 : 4;
 				m_SpawnSet = (setIndexBits | setValueBits);
 			}
 		}
+		else
+		{
+			m_SpawnSet = 0;
+		}
 
-		ImGui::SliderInt("Sockets (0..5)", &m_SpawnSocket, 0, 5);
+		ITEM tmpItem;
+		memset(&tmpItem, 0, sizeof(tmpItem));
+		tmpItem.Type = selectedItem;
+		const bool canSocket = (g_SocketItemMgr.IsSocketItem(&tmpItem) != FALSE);
+		if (canSocket)
+		{
+			ImGui::SliderInt("Sockets (0..5)", &m_SpawnSocket, 0, 5);
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+				ImGui::SetTooltip("Creates N empty sockets (server uses 0xFE as empty socket marker).");
+		}
+		else
+		{
+			m_SpawnSocket = 0;
+		}
 	}
 
 	ImGui::NewLine();
