@@ -504,6 +504,12 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 
 	ImGui::Text("Index: %d", selectedItem);
 
+	if (item_info == 0)
+	{
+		ImGui::TextColored(ImVec4(1.f, 0.2f, 0.2f, 1.f), "Client Data: MISSING (Item.bmd)");
+		return;
+	}
+
 	if (item_info->Name[0] != '\0')
 	{
 		ImGui::Text("%s", item_info->Name);
@@ -586,6 +592,68 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 		(int)item_info->RequireEnergy,
 		(int)item_info->RequireVitality,
 		(int)item_info->RequireCharisma);
+
+#ifdef PACK_FILE_DECRYPT_H
+	{
+		bool tooltipOk = true;
+		char reason[256] = { 0 };
+
+		if (g_pNewItemTooltip == 0)
+		{
+			tooltipOk = false;
+			sprintf_s(reason, "Tooltip system not initialized");
+		}
+		else
+		{
+			_ITEM_TOOLTIP_DATA* tooltip = g_pNewItemTooltip->FindTooltip(selectedItem);
+			if (tooltip == 0)
+			{
+				tooltipOk = false;
+				sprintf_s(reason, "No entry in itemtooltip.bmd (Data\\\\Local\\\\%s\\\\itemtooltip.bmd)", g_strSelectedML.c_str());
+			}
+			else
+			{
+				if (tooltip->ItemLevel >= 0)
+				{
+					const int findLevel = tooltip->ItemLevel + (m_SpawnLevel & 0x0F);
+					if (g_pNewItemTooltip->FindLevelTooltip(findLevel) == 0)
+					{
+						tooltipOk = false;
+						sprintf_s(reason, "Missing ItemLevelTooltip index=%d (Data\\\\Local\\\\%s\\\\ItemLevelTooltip.bmd)", findLevel, g_strSelectedML.c_str());
+					}
+				}
+
+				int totalText = 0;
+				int missingText = 0;
+				for (int i = 0; i < 12; ++i)
+				{
+					const int textIndex = tooltip->TextInfo[i].Text;
+					if (textIndex <= 0)
+						continue;
+					totalText++;
+					if (g_pNewItemTooltip->FindTooltipText(textIndex) == 0)
+						missingText++;
+				}
+
+				if (tooltipOk && totalText > 0 && missingText == totalText)
+				{
+					tooltipOk = false;
+					sprintf_s(reason, "All TooltipText indices are missing (Data\\\\Local\\\\%s\\\\ItemTooltipText.bmd)", g_strSelectedML.c_str());
+				}
+			}
+		}
+
+		if (tooltipOk)
+		{
+			ImGui::Text("Tooltip: OK");
+		}
+		else
+		{
+			ImGui::TextColored(ImVec4(1.f, 0.2f, 0.2f, 1.f), "Tooltip: MISSING");
+			ImGui::TextWrapped("%s", reason);
+		}
+	}
+#endif // PACK_FILE_DECRYPT_H
 
 	ImGui::Separator();
 
