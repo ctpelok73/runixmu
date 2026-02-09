@@ -20,6 +20,154 @@
 
 #ifdef EFFECT_MNG_HANDLE
 
+static int gmGetClassNameKey(int baseClass, int requireClass)
+{
+	int NameClass = 2305;
+
+	switch (baseClass)
+	{
+	case Dark_Wizard:
+		if (requireClass == 1) NameClass = 20;
+		else if (requireClass == 2) NameClass = 25;
+		else if (requireClass == 3) NameClass = 1669;
+		else if (requireClass == 4) NameClass = 3186;
+		break;
+	case Dark_Knight:
+		if (requireClass == 1) NameClass = 21;
+		else if (requireClass == 2) NameClass = 26;
+		else if (requireClass == 3) NameClass = 1668;
+		else if (requireClass == 4) NameClass = 3187;
+		break;
+	case Fairy_Elf:
+		if (requireClass == 1) NameClass = 22;
+		else if (requireClass == 2) NameClass = 27;
+		else if (requireClass == 3) NameClass = 1670;
+		else if (requireClass == 4) NameClass = 3188;
+		break;
+	case Magic_Gladiator:
+		if (requireClass == 1) NameClass = 23;
+		else if (requireClass == 2) NameClass = 2305;
+		else if (requireClass == 3) NameClass = 1671;
+		else if (requireClass == 4) NameClass = 3189;
+		break;
+	case Dark_Lord:
+		if (requireClass == 1) NameClass = 24;
+		else if (requireClass == 2) NameClass = 2305;
+		else if (requireClass == 3) NameClass = 1672;
+		else if (requireClass == 4) NameClass = 3190;
+		break;
+	case Summoner:
+		if (requireClass == 1) NameClass = 1687;
+		else if (requireClass == 2) NameClass = 1688;
+		else if (requireClass == 3) NameClass = 1689;
+		else if (requireClass == 4) NameClass = 3191;
+		break;
+	case Rage_Fighter:
+		if (requireClass == 1) NameClass = 3150;
+		else if (requireClass == 2) NameClass = 2305;
+		else if (requireClass == 3) NameClass = 3151;
+		else if (requireClass == 4) NameClass = 3192;
+		break;
+	case Grow_Lancer:
+		if (requireClass == 1) NameClass = 3175;
+		else if (requireClass == 2) NameClass = 2305;
+		else if (requireClass == 3) NameClass = 3176;
+		else if (requireClass == 4) NameClass = 3177;
+		break;
+	case Runer_Wizzard:
+		if (requireClass == 1) NameClass = 3179;
+		else if (requireClass == 2) NameClass = 3181;
+		else if (requireClass == 3) NameClass = 3182;
+		else if (requireClass == 4) NameClass = 3183;
+		break;
+	case Slayer:
+		if (requireClass == 1) NameClass = 3193;
+		else if (requireClass == 2) NameClass = 3194;
+		else if (requireClass == 3) NameClass = 3195;
+		else if (requireClass == 4) NameClass = 3196;
+		break;
+	case Gun_Crusher:
+		if (requireClass == 1) NameClass = 3200;
+		else if (requireClass == 2) NameClass = 3201;
+		else if (requireClass == 3) NameClass = 3202;
+		else if (requireClass == 4) NameClass = 3203;
+		break;
+	case Mage_Kundun:
+		if (requireClass == 1) NameClass = 3218;
+		else if (requireClass == 2) NameClass = 3219;
+		else if (requireClass == 3) NameClass = 3220;
+		else if (requireClass == 4) NameClass = 3221;
+		break;
+	case Mage_Lemuria:
+		if (requireClass == 1) NameClass = 3213;
+		else if (requireClass == 2) NameClass = 3214;
+		else if (requireClass == 3) NameClass = 3215;
+		else if (requireClass == 4) NameClass = 3216;
+		break;
+	case Illusion_Knight:
+		if (requireClass == 1) NameClass = 3209;
+		else if (requireClass == 2) NameClass = 3210;
+		else if (requireClass == 3) NameClass = 3211;
+		else if (requireClass == 4) NameClass = 3212;
+		break;
+	default:
+		NameClass = 2305;
+		break;
+	}
+
+	if (NameClass == 2305 && requireClass != 1)
+	{
+		return gmGetClassNameKey(baseClass, 1);
+	}
+
+	return NameClass;
+}
+
+static std::string gmBuildItemClassInfoText(const Script_Item* item_info)
+{
+	if (!item_info)
+		return std::string();
+
+	bool any = false;
+	bool all = true;
+
+	for (int i = 0; i < MAX_CLASS_PLAYER; ++i)
+	{
+		if (item_info->RequireClass[i] != 0)
+			any = true;
+		else
+			all = false;
+	}
+
+	if (!any)
+		return std::string();
+	if (all)
+		return std::string("All");
+
+	std::string out;
+	for (int i = 0; i < MAX_CLASS_PLAYER; ++i)
+	{
+		const int req = (int)item_info->RequireClass[i];
+		if (req == 0)
+			continue;
+
+		const int nameKey = gmGetClassNameKey(i, req);
+		const char* name = GlobalText[nameKey];
+		char fallback[64] = { 0 };
+		if (!name || !name[0])
+		{
+			sprintf_s(fallback, "Class%d(req=%d)", i, req);
+			name = fallback;
+		}
+
+		if (!out.empty())
+			out += ", ";
+		out += name;
+	}
+
+	return out;
+}
+
 extern bool g_GMMenuPreviewActive;
 extern bool g_GMMenuPreviewAutoRotate;
 extern float g_GMMenuPreviewRotateY;
@@ -592,6 +740,26 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 		(int)item_info->RequireEnergy,
 		(int)item_info->RequireVitality,
 		(int)item_info->RequireCharisma);
+
+	{
+		const bool isEquipmentKind =
+			(item_info->Kind1 == ItemKind1::WEAPON) ||
+			(item_info->Kind1 == ItemKind1::ARMOR) ||
+			(item_info->Kind1 == ItemKind1::MASTERY_WEAPON) ||
+			(item_info->Kind1 == ItemKind1::MASTERY_ARMOR_1) ||
+			(item_info->Kind1 == ItemKind1::MASTERY_ARMOR_2);
+
+		if (isEquipmentKind)
+		{
+			std::string classInfo = gmBuildItemClassInfoText(item_info);
+			if (classInfo.empty())
+				ImGui::Text("Classes: (not specified)");
+			else if (classInfo.size() > 80)
+				ImGui::TextWrapped("Classes: %s", classInfo.c_str());
+			else
+				ImGui::Text("Classes: %s", classInfo.c_str());
+		}
+	}
 
 #ifdef PACK_FILE_DECRYPT_H
 	{
