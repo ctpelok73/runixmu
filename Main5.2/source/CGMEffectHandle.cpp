@@ -4,10 +4,15 @@
 #include "CGMEffectHandle.h"
 #include "MonkSystem.h"
 #include "Protocol.h"
+#include "CSItemOption.h"
+#include "ZzzInventory.h"
 #include "./Utilities/Log/ErrorReport.h"
 #include "./Utilities/Log/muConsoleDebug.h"
 
 #include <set>
+#include <string>
+#include <vector>
+#include <algorithm>
 
 #include "imgui_impl_win32.h"
 #include "imgui_impl_opengl2.h"
@@ -245,16 +250,41 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 	ImGui::NewFrame();
 
 	ImGui::SetNextWindowPos(ImVec2(m_Pos.x * g_fScreenRate_x, m_Pos.y * g_fScreenRate_y));
-	ImGui::SetNextWindowSize(ImVec2(460.f * g_fScreenRate_x, 264.f * g_fScreenRate_y));
+	ImGui::SetNextWindowSize(ImVec2(560.f * g_fScreenRate_x, 340.f * g_fScreenRate_y));
 
 	static bool GraphicImage = false;
+	static float s_previewZoom = 1.35f;
+	static ImVec2 s_previewRectMin = ImVec2(0, 0);
+	static ImVec2 s_previewRectMax = ImVec2(0, 0);
+	static bool s_previewHovered = false;
 
 	ImGui::Begin("RenderMesh Tools", &GraphicImage, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse);
 
 	// Secci�n 1: Arriba izquierda
-	ImGui::BeginChild("Child1", ImVec2((160 * g_fScreenRate_x), 0), ImGuiChildFlags_Border);
+	ImGui::BeginChild("Child1", ImVec2((220 * g_fScreenRate_x), 0), ImGuiChildFlags_Border);
 
-	ImGui::BeginChild("Sub-Child1", ImVec2(0, (110.f * g_fScreenRate_y)), ImGuiChildFlags_Border);
+	ImGui::BeginChild("Sub-Child1", ImVec2(0, (200.f * g_fScreenRate_y)), ImGuiChildFlags_Border);
+	{
+		const ImVec2 avail = ImGui::GetContentRegionAvail();
+		ImGui::InvisibleButton("##preview_capture", avail);
+		s_previewRectMin = ImGui::GetItemRectMin();
+		s_previewRectMax = ImGui::GetItemRectMax();
+		s_previewHovered = ImGui::IsItemHovered();
+
+		if (s_previewHovered)
+		{
+			const float wheel = ImGui::GetIO().MouseWheel;
+			if (wheel != 0.0f)
+			{
+				s_previewZoom += wheel * 0.10f;
+				if (s_previewZoom < 0.50f) s_previewZoom = 0.50f;
+				if (s_previewZoom > 3.00f) s_previewZoom = 3.00f;
+			}
+		}
+
+		ImGui::SetCursorPos(ImVec2(6.0f * g_fScreenRate_x, 6.0f * g_fScreenRate_y));
+		ImGui::Text("Preview (wheel zoom: %.0f%%)", s_previewZoom * 100.0f);
+	}
 	ImGui::EndChild();
 
 	ImGui::BeginChild("Sub-Child2", ImVec2(0, 0), ImGuiChildFlags_Border);
@@ -286,13 +316,33 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 
 		if (item_info->Name[0] != '\0')
 		{
-			int wmodel = item_info->Width * 20;
-			int hmodel = item_info->Height * 20;
+			const float previewX = s_previewRectMin.x / g_fScreenRate_x;
+			const float previewY = s_previewRectMin.y / g_fScreenRate_y;
+			const float previewW = (s_previewRectMax.x - s_previewRectMin.x) / g_fScreenRate_x;
+			const float previewH = (s_previewRectMax.y - s_previewRectMin.y) / g_fScreenRate_y;
 
-			int posx = m_Pos.x + 80 - (wmodel / 2);
-			int posy = m_Pos.y + 55 - (hmodel / 2);
+			const float cx = previewX + (previewW * 0.5f);
+			const float cy = previewY + (previewH * 0.5f);
 
-			RenderLocalItem3D(posx, posy, wmodel, hmodel, selectedItem);
+			const float itemW = (float)item_info->Getwidth() * s_previewZoom;
+			const float itemH = (float)item_info->Getheight() * s_previewZoom;
+
+			SEASON3B::begin3D();
+			RenderItem3D(
+				cx - (itemW * 0.5f),
+				cy - (itemH * 0.5f),
+				itemW,
+				itemH,
+				selectedItem,
+				0,
+				0,
+				0,
+				false,
+				previewX,
+				previewY,
+				previewW,
+				previewH);
+			SEASON3B::endrender3D();
 		}
 	}
 }
@@ -527,6 +577,8 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 		const int kind2 = item_info ? (int)item_info->Kind2 : 0;
 		const bool isWeapon = (kind2 >= 1 && kind2 <= 14) || kind2 == 78 || kind2 == 81 || kind2 == 84 || kind2 == 89 || kind2 == 90;
 		const bool isArmorOrShield = (kind2 >= 15 && kind2 <= 20) || kind2 == 77;
+		const bool isWing = (kind2 == 23 || kind2 == 24 || kind2 == 25 || kind2 == 76 || kind2 == 80);
+		const bool isAccessory = (kind2 == 29 || kind2 == 30 || kind2 == 31);
 
 		const char* excWeapon[6] = {
 			"Exc: Mana per kill",
@@ -546,7 +598,20 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 			"Exc: Zen per kill +40%",
 		};
 
-		const char** excNames = isWeapon ? excWeapon : (isArmorOrShield ? excArmor : 0);
+		const char* excWing[6] = {
+			"Exc: Ignore enemy defense",
+			"Exc: Return damage",
+			"Exc: Complete life recovery",
+			"Exc: Complete mana recovery",
+			"Exc: Increase attack speed",
+			"Exc: Increase damage",
+		};
+
+		const char** excNames =
+			isWeapon ? excWeapon :
+			(isArmorOrShield ? excArmor :
+				(isWing ? excWing :
+					(isAccessory ? excArmor : 0)));
 
 		auto setExcBit = [this](int mask, bool enabled)
 			{
@@ -575,7 +640,53 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 
 	if (ImGui::CollapsingHeader("Advanced"))
 	{
-		ImGui::SliderInt("Ancient/Set ID (0..255)", &m_SpawnSet, 0, 255);
+		bool ancientEnabled = (m_SpawnSet != 0);
+		if (ImGui::Checkbox("Ancient", &ancientEnabled))
+		{
+			if (ancientEnabled == false)
+			{
+				m_SpawnSet = 0;
+			}
+		}
+
+		if (ancientEnabled)
+		{
+			char nameA[64] = { 0 };
+			char nameB[64] = { 0 };
+			const bool hasA = g_csItemOption.GetSetItemName(nameA, selectedItem, EXT_A_SET_OPTION);
+			const bool hasB = g_csItemOption.GetSetItemName(nameB, selectedItem, EXT_B_SET_OPTION);
+
+			if (hasA == false && hasB == false)
+			{
+				m_SpawnSet = 0;
+				ImGui::TextColored(ImVec4(1.f, 0.2f, 0.2f, 1.f), "No ancient sets for this item");
+			}
+			else
+			{
+				static int s_variant = 0; // 0=A, 1=B
+				static bool s_bonus10 = true; // false=+5, true=+10
+
+				if (s_variant == 0 && hasA == false) s_variant = 1;
+				if (s_variant == 1 && hasB == false) s_variant = 0;
+
+				ImGui::Text("Ancient set");
+				if (hasA)
+				{
+					ImGui::RadioButton(nameA, &s_variant, 0);
+				}
+				if (hasB)
+				{
+					ImGui::RadioButton(nameB, &s_variant, 1);
+				}
+
+				ImGui::Checkbox("Ancient bonus +10", &s_bonus10);
+
+				const int setIndexBits = (s_variant == 0) ? 1 : 2;
+				const int setValueBits = s_bonus10 ? 8 : 4;
+				m_SpawnSet = (setIndexBits | setValueBits);
+			}
+		}
+
 		ImGui::SliderInt("Sockets (0..5)", &m_SpawnSocket, 0, 5);
 	}
 

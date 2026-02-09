@@ -102,6 +102,9 @@ public:
 	BYTE GetSetOptionBNum();
 	void SetViewOptionList(bool bView);
 	bool IsViewOptionList();
+
+	const char* GetSetOptionName(int index) const;
+	bool HasSetOptionName(int index) const;
 };
 
 #define g_csItemOption CSItemOption::GetSingleton()

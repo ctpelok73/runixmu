@@ -1805,3 +1805,19 @@ bool CSItemOption::IsViewOptionList()
 {
 	return m_bViewOptionList;
 }
+
+const char* CSItemOption::GetSetOptionName(int index) const
+{
+	if (index < 0 || index >= MAX_SET_OPTION)
+	{
+		return "";
+	}
+
+	return m_ItemSetOption[index].strSetName;
+}
+
+bool CSItemOption::HasSetOptionName(int index) const
+{
+	const char* name = GetSetOptionName(index);
+	return (name != 0 && name[0] != '\0');
+}
