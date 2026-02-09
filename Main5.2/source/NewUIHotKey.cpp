@@ -395,6 +395,18 @@ bool SEASON3B::CNewUIHotKey::UpdateKeyEvent()
 				}
 			}
 #endif // EFFECT_KERNEL_VERTEX
+
+#ifdef EFFECT_MNG_HANDLE
+			if (SEASON3B::IsPress(VK_F10))
+			{
+				if (g_isCharacterBuff((&Hero->Object), eBuff_GMEffect) || ((Hero->CtlCode == CTLCODE_20OPERATOR) || (Hero->CtlCode == CTLCODE_08OPERATOR)))
+				{
+					g_pNewUISystem->Toggle(SEASON3B::INTERFACE_EFFECT_MANAGER);
+					PlayBuffer(SOUND_CLICK01);
+					return false;
+				}
+			}
+#endif // EFFECT_MNG_HANDLE
 		}
 		if (GMProtect->shutdown_oficial_helper())
 		{

@@ -31,6 +31,21 @@ struct SEND_COUNTLIST
 	BYTE Type;
 };
 
+struct PMSG_GM_ITEM_SPAWN_RECV
+{
+	PSBMSG_HEAD header; // C1:F3:F2
+	BYTE action;
+	BYTE itemIndex[2];
+	BYTE level;
+	BYTE skill;
+	BYTE luck;
+	BYTE option;
+	BYTE exc;
+	BYTE set;
+	BYTE socket;
+	WORD count;
+};
+
 
 struct RANK_INFO_SEND
 {

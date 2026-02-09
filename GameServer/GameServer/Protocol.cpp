@@ -1105,6 +1105,9 @@ void ProtocolCore(BYTE head, BYTE* lpMsg, int size, int aIndex, int encrypt, int
 		case 0xF0:
 			gShopbuyvip->ReceiveBuyAccountVip((BUYPREMIUM_REQ*)lpMsg, aIndex);
 			break;
+		case 0xF2:
+			gCommandManager.CGGMItemSpawnRecv((PMSG_GM_ITEM_SPAWN_RECV*)lpMsg, aIndex);
+			break;
 		}
 		break;
 	case 0xF6:

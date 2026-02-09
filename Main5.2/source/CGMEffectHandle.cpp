@@ -3,6 +3,11 @@
 #include "NewUISystem.h"
 #include "CGMEffectHandle.h"
 #include "MonkSystem.h"
+#include "Protocol.h"
+#include "./Utilities/Log/ErrorReport.h"
+#include "./Utilities/Log/muConsoleDebug.h"
+
+#include <set>
 
 #include "imgui_impl_win32.h"
 #include "imgui_impl_opengl2.h"
@@ -18,6 +23,18 @@ SEASON3B::CGFxEffectHandle::CGFxEffectHandle()
 	m_Pos.y = 0;
 	m_bEditEnchant = 0;
 	selectedItem = -1;
+	m_ItemSection = 0;
+	m_ItemType = 0;
+	m_SpawnCount = 1;
+	m_SpawnLevel = 0;
+	m_SpawnSkill = 0;
+	m_SpawnLuck = 0;
+	m_SpawnOption = 0;
+	m_SpawnExc = 0;
+	m_SpawnSet = 0;
+	m_SpawnSocket = 0;
+	m_bPreviewModelOk = false;
+	memset(m_szPreviewModelError, 0, sizeof(m_szPreviewModelError));
 	m_bEditEnchant = FALSE;
 
 	memset(&m_bSettings, 0, sizeof(m_bSettings));
@@ -83,6 +100,40 @@ bool SEASON3B::CGFxEffectHandle::UpdateKeyEvent()
 			g_pNewUISystem->Hide(INTERFACE_EFFECT_MANAGER);
 			return false;
 		}
+
+		bool changed = false;
+
+		if (SEASON3B::IsPress(VK_UP))
+		{
+			m_ItemSection--;
+			changed = true;
+		}
+		else if (SEASON3B::IsPress(VK_DOWN))
+		{
+			m_ItemSection++;
+			changed = true;
+		}
+		else if (SEASON3B::IsPress(VK_LEFT))
+		{
+			m_ItemType--;
+			changed = true;
+		}
+		else if (SEASON3B::IsPress(VK_RIGHT))
+		{
+			m_ItemType++;
+			changed = true;
+		}
+
+		if (changed != false)
+		{
+			if (m_ItemSection < 0) m_ItemSection = 0;
+			if (m_ItemSection > 15) m_ItemSection = 15;
+			if (m_ItemType < 0) m_ItemType = 0;
+			if (m_ItemType > 511) m_ItemType = 511;
+
+			SyncItemIndexFromSectionType();
+			return false;
+		}
 	}
 	return true;
 }
@@ -131,8 +182,57 @@ void SEASON3B::CGFxEffectHandle::SetButtonInfo()
 
 }
 
+void SEASON3B::CGFxEffectHandle::SyncItemIndexFromSectionType()
+{
+	selectedItem = (m_ItemSection * 512) + m_ItemType;
+}
+
+bool SEASON3B::CGFxEffectHandle::IsGmUser() const
+{
+	if (Hero == nullptr)
+	{
+		return false;
+	}
+
+	if ((Hero->CtlCode & CTLCODE_20OPERATOR) != 0 || (Hero->CtlCode & CTLCODE_08OPERATOR) != 0)
+	{
+		return true;
+	}
+
+	return g_isCharacterBuff((&Hero->Object), eBuff_GMEffect) != 0;
+}
+
+void SEASON3B::CGFxEffectHandle::SendItemSpawn(BYTE action) const
+{
+	if (selectedItem < 0)
+	{
+		return;
+	}
+
+	PMSG_GM_ITEM_SPAWN_RECV pMsg;
+	pMsg.header.set(0xF3, 0xF2, sizeof(pMsg));
+	pMsg.action = action;
+	pMsg.itemIndex[0] = SET_NUMBERHB((WORD)selectedItem);
+	pMsg.itemIndex[1] = SET_NUMBERLB((WORD)selectedItem);
+	pMsg.level = (BYTE)((m_SpawnLevel < 0) ? 0 : (m_SpawnLevel > 15) ? 15 : m_SpawnLevel);
+	pMsg.skill = (BYTE)((m_SpawnSkill != 0) ? 1 : 0);
+	pMsg.luck = (BYTE)((m_SpawnLuck != 0) ? 1 : 0);
+	pMsg.option = (BYTE)((m_SpawnOption < 0) ? 0 : (m_SpawnOption > 7) ? 7 : m_SpawnOption);
+	pMsg.exc = (BYTE)((m_SpawnExc < 0) ? 0 : (m_SpawnExc > 63) ? 63 : m_SpawnExc);
+	pMsg.set = (BYTE)((m_SpawnSet < 0) ? 0 : (m_SpawnSet > 255) ? 255 : m_SpawnSet);
+	pMsg.socket = (BYTE)((m_SpawnSocket < 0) ? 0 : (m_SpawnSocket > 5) ? 5 : m_SpawnSocket);
+	pMsg.count = (WORD)((m_SpawnCount < 1) ? 1 : (m_SpawnCount > 100) ? 100 : m_SpawnCount);
+	DataSend((BYTE*)&pMsg, pMsg.header.size);
+}
+
 void SEASON3B::CGFxEffectHandle::RenderFrame()
 {
+	if (this->IsGmUser() == false)
+	{
+		g_pNewUISystem->Hide(INTERFACE_EFFECT_MANAGER);
+		return;
+	}
+
 	// Iniciar frame de ImGui
 	ImGui_ImplOpenGL2_NewFrame();
 	ImGui_ImplWin32_NewFrame();
@@ -146,7 +246,7 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 
 	ImGui::Begin("RenderMesh Tools", &GraphicImage, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse);
 
-	// Sección 1: Arriba izquierda
+	// Secciï¿½n 1: Arriba izquierda
 	ImGui::BeginChild("Child1", ImVec2((160 * g_fScreenRate_x), 0), ImGuiChildFlags_Border);
 
 	ImGui::BeginChild("Sub-Child1", ImVec2(0, (110.f * g_fScreenRate_y)), ImGuiChildFlags_Border);
@@ -158,7 +258,7 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 
 	ImGui::EndChild();
 
-	// Contenido de la primera sección
+	// Contenido de la primera secciï¿½n
 	ImGui::EndChild();
 
 	ImGui::SameLine();
@@ -175,7 +275,7 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 	ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
 
 	//------------------
-	if (selectedItem != -1)
+	if (selectedItem != -1 && m_bPreviewModelOk)
 	{
 		Script_Item* item_info = GMItemMng->find(selectedItem);
 
@@ -194,68 +294,257 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 
 void SEASON3B::CGFxEffectHandle::RenderContents()
 {
-	reload_collection_item(0);
+	SyncItemIndexFromSectionType();
 
-	ImGui::Text("Selected Item");
+	m_bPreviewModelOk = false;
+	m_szPreviewModelError[0] = '\0';
 
-	comboBoxItems.Render("##comboItem", "No available");
+	auto fileExists = [](const char* path) -> bool
+		{
+			const DWORD attr = GetFileAttributesA(path);
+			if (attr == INVALID_FILE_ATTRIBUTES)
+				return false;
+			return (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
+		};
 
-	int currentindex = comboBoxItems.getSelectedIndex();
+	auto guessModelPath = [](int section, int type, char* outPath, size_t outPathSize)
+		{
+			if (outPathSize == 0)
+				return;
 
-	if (selectedItem != currentindex)
+			outPath[0] = '\0';
+
+			const char* dir = "Data\\Item\\";
+			if (section >= 7 && section <= 11)
+				dir = "Data\\Player\\";
+
+			const char* prefix = 0;
+			switch (section)
+			{
+			case 0: prefix = "Sword"; break;
+			case 1: prefix = "Axe"; break;
+			case 2: prefix = "Mace"; break;
+			case 3: prefix = "Spear"; break;
+			case 4: prefix = "Bow"; break;
+			case 5: prefix = "Staff"; break;
+			case 6: prefix = "Shield"; break;
+			case 7: prefix = "HelmMale"; break;
+			case 8: prefix = "ArmorMale"; break;
+			case 9: prefix = "PantMale"; break;
+			case 10: prefix = "GloveMale"; break;
+			case 11: prefix = "BootMale"; break;
+			case 12: prefix = "Wing"; break;
+			case 13: prefix = "Helper"; break;
+			default: prefix = 0; break;
+			}
+
+			if (prefix == 0)
+				return;
+
+			const int idx = type + 1;
+			if (idx >= 10)
+				sprintf_s(outPath, outPathSize, "%s%s%d.bmd", dir, prefix, idx);
+			else
+				sprintf_s(outPath, outPathSize, "%s%s0%d.bmd", dir, prefix, idx);
+		};
+
+	Script_Item* item_info = GMItemMng->find(selectedItem);
+
+	auto kind2Name = [](BYTE kind2) -> const char*
+		{
+			switch (kind2)
+			{
+			case 1: return "Sword";
+			case 2: return "Magic Sword";
+			case 3: return "Fist";
+			case 4: return "Axe";
+			case 5: return "Mace";
+			case 6: return "Scepter";
+			case 7: return "Lance";
+			case 8: return "Bow";
+			case 9: return "Crossbow";
+			case 10: return "Arrow";
+			case 11: return "Bolt";
+			case 12: return "Staff";
+			case 13: return "Stick";
+			case 14: return "Book";
+			case 15: return "Shield";
+			case 16: return "Helm";
+			case 17: return "Armor";
+			case 18: return "Pants";
+			case 19: return "Gloves";
+			case 20: return "Boots";
+			case 23: return "Wings Lv1";
+			case 24: return "Wings Lv2";
+			case 25: return "Wings Lv3";
+			case 76: return "Wings Lv4";
+			case 80: return "Wings Power";
+			case 29: return "Pendant";
+			case 30: return "Wizard Pendant";
+			case 31: return "Ring";
+			case 43: return "Pentagram";
+			case 44: return "Errtel";
+			case 51: return "Potion";
+			case 56: return "Jewel";
+			case 63: return "Muun";
+			default: return "Unknown";
+			}
+		};
+
+	ImGui::Text("Item Select");
 	{
-		selectedItem = currentindex;
-
-		reload_collection_item(1);
+		ImGui::PushID("section");
+		if (ImGui::ArrowButton("##up", ImGuiDir_Up)) m_ItemSection--;
+		ImGui::SameLine();
+		if (ImGui::ArrowButton("##down", ImGuiDir_Down)) m_ItemSection++;
+		ImGui::SameLine();
+		ImGui::Text("Section: %d", m_ItemSection);
+		ImGui::PopID();
+	}
+	{
+		ImGui::PushID("type");
+		if (ImGui::ArrowButton("##left", ImGuiDir_Left)) m_ItemType--;
+		ImGui::SameLine();
+		if (ImGui::ArrowButton("##right", ImGuiDir_Right)) m_ItemType++;
+		ImGui::SameLine();
+		ImGui::Text("Type: %d", m_ItemType);
+		ImGui::PopID();
 	}
 
-	ImGui::Text("Selected GroupId");
+	if (m_ItemSection < 0) m_ItemSection = 0;
+	if (m_ItemSection > 15) m_ItemSection = 15;
+	if (m_ItemType < 0) m_ItemType = 0;
+	if (m_ItemType > 511) m_ItemType = 511;
 
-	comboBoxGroup.Render("##comboGroup", "Error");
+	SyncItemIndexFromSectionType();
+	item_info = GMItemMng->find(selectedItem);
 
-	m_bSettings.GroupId = comboBoxGroup.getSelectedIndex();
+	ImGui::Text("Index: %d", selectedItem);
 
-	ImGui::Text("color mesh");
+	if (item_info->Name[0] != '\0')
+	{
+		ImGui::Text("%s", item_info->Name);
+	}
+	else
+	{
+		ImGui::Text("No name in Item.bmd");
+	}
 
-	ImGui::ColorEdit3("RGB", m_bSettings.Color);
+	if (selectedItem >= 0)
+	{
+		const int modelType = MODEL_ITEM + selectedItem;
+		BMD* pModel = gmClientModels ? gmClientModels->GetModel(modelType) : 0;
+		const bool ok = (pModel != 0 && pModel->NumMeshs > 0 && pModel->Meshs != 0);
 
+		if (ok)
+		{
+			m_bPreviewModelOk = true;
+			ImGui::Text("Model: OK");
+		}
+		else
+		{
+			char guessPath[260] = { 0 };
+			guessModelPath(m_ItemSection, m_ItemType, guessPath, sizeof(guessPath));
 
-	ImGui::Text("RenderFlag");
+			if (guessPath[0] != '\0')
+				sprintf_s(m_szPreviewModelError, sizeof(m_szPreviewModelError), "ModelId=%d  Guess=%s  Exists=%d", modelType, guessPath, fileExists(guessPath) ? 1 : 0);
+			else
+				sprintf_s(m_szPreviewModelError, sizeof(m_szPreviewModelError), "ModelId=%d  Guess=(unknown)", modelType);
 
-	ImGui::InputInt("##RenderFlag", &m_bSettings.RenderFlag);
+			ImGui::TextColored(ImVec4(1.f, 0.2f, 0.2f, 1.f), "Model: MISSING");
+			ImGui::TextWrapped("%s", m_szPreviewModelError);
 
+			static std::set<int> s_loggedMissingModels;
+			if (s_loggedMissingModels.insert(modelType).second)
+			{
+				static bool s_errorReportInit = false;
+				if (!s_errorReportInit)
+				{
+					g_ErrorReport.Create("GMMenu_MissingModels.log");
+					s_errorReportInit = true;
+				}
 
-	ImGui::Text("RenderType");
+				g_ErrorReport.Write("[GMMenu] Missing model: item=%d section=%d type=%d modelId=%d guess=%s exists=%d\r\n",
+					selectedItem,
+					m_ItemSection,
+					m_ItemType,
+					modelType,
+					guessPath[0] ? guessPath : "(unknown)",
+					guessPath[0] ? (fileExists(guessPath) ? 1 : 0) : -1);
 
-	ImGui::InputInt("##RenderType", &m_bSettings.RenderType, 1);
+				if (g_ConsoleDebug)
+				{
+					g_ConsoleDebug->Write(MCD_ERROR, "[GMMenu] Missing model: item=%d section=%d type=%d modelId=%d guess=%s exists=%d",
+						selectedItem,
+						m_ItemSection,
+						m_ItemType,
+						modelType,
+						guessPath[0] ? guessPath : "(unknown)",
+						guessPath[0] ? (fileExists(guessPath) ? 1 : 0) : -1);
+				}
+			}
+		}
+	}
 
+	ImGui::Separator();
 
-	ImGui::Text("RenderTime");
+	ImGui::Text("Client Data (Item.bmd)");
+	ImGui::Text("Kind: %d / %s / %d", item_info->Kind1, kind2Name(item_info->Kind2), item_info->Kind3);
+	ImGui::Text("Size: %dx%d  Dur: %d", (int)item_info->Width, (int)item_info->Height, (int)item_info->Durability);
+	ImGui::Text("DMG: %d-%d  DEF: %d  MDEF: %d", (int)item_info->DamageMin, (int)item_info->DamageMax, (int)item_info->Defense, (int)item_info->MagicDefense);
+	ImGui::Text("Req Lvl: %d  Str: %d  Dex: %d  Ene: %d  Vit: %d  Cmd: %d",
+		(int)item_info->RequireLevel,
+		(int)item_info->RequireStrength,
+		(int)item_info->RequireDexterity,
+		(int)item_info->RequireEnergy,
+		(int)item_info->RequireVitality,
+		(int)item_info->RequireCharisma);
 
-	ImGui::InputFloat("##RenderTime", &m_bSettings.TimeEffectType, 0.1);
+	ImGui::Separator();
 
+	ImGui::Text("Spawn Options");
+	ImGui::SliderInt("Quantity", &m_SpawnCount, 1, 100);
+	ImGui::SliderInt("Item Level", &m_SpawnLevel, 0, 15);
+	{
+		bool skill = (m_SpawnSkill != 0);
+		if (ImGui::Checkbox("Skill (+Skill)", &skill)) m_SpawnSkill = skill ? 1 : 0;
+		ImGui::SameLine();
+		bool luck = (m_SpawnLuck != 0);
+		if (ImGui::Checkbox("Luck (+Luck)", &luck)) m_SpawnLuck = luck ? 1 : 0;
+	}
+	ImGui::SliderInt("Option (+0..+7)", &m_SpawnOption, 0, 7);
 
-	ImGui::Text("TextureId");
+	{
+		bool exc1 = (m_SpawnExc & 0x01) != 0;
+		bool exc2 = (m_SpawnExc & 0x02) != 0;
+		bool exc3 = (m_SpawnExc & 0x04) != 0;
+		bool exc4 = (m_SpawnExc & 0x08) != 0;
+		bool exc5 = (m_SpawnExc & 0x10) != 0;
+		bool exc6 = (m_SpawnExc & 0x20) != 0;
 
-	ImGui::InputInt("##TextureId", &m_bSettings.TextureID, 1);
+		ImGui::Text("Excellent (1..6)");
+		if (ImGui::Checkbox("Exc 1", &exc1)) { m_SpawnExc = (exc1 ? (m_SpawnExc | 0x01) : (m_SpawnExc & ~0x01)); }
+		ImGui::SameLine();
+		if (ImGui::Checkbox("Exc 2", &exc2)) { m_SpawnExc = (exc2 ? (m_SpawnExc | 0x02) : (m_SpawnExc & ~0x02)); }
+		ImGui::SameLine();
+		if (ImGui::Checkbox("Exc 3", &exc3)) { m_SpawnExc = (exc3 ? (m_SpawnExc | 0x04) : (m_SpawnExc & ~0x04)); }
+		if (ImGui::Checkbox("Exc 4", &exc4)) { m_SpawnExc = (exc4 ? (m_SpawnExc | 0x08) : (m_SpawnExc & ~0x08)); }
+		ImGui::SameLine();
+		if (ImGui::Checkbox("Exc 5", &exc5)) { m_SpawnExc = (exc5 ? (m_SpawnExc | 0x10) : (m_SpawnExc & ~0x10)); }
+		ImGui::SameLine();
+		if (ImGui::Checkbox("Exc 6", &exc6)) { m_SpawnExc = (exc6 ? (m_SpawnExc | 0x20) : (m_SpawnExc & ~0x20)); }
+	}
 
-
-	ImGui::Text("TextureTime");
-
-	ImGui::InputFloat("##TextureTime", &m_bSettings.TimeTextureID, 0.1);
-
+	ImGui::SliderInt("Ancient/Set (0..255)", &m_SpawnSet, 0, 255);
+	ImGui::SliderInt("Socket Count (0..5)", &m_SpawnSocket, 0, 5);
 
 	ImGui::NewLine();
 
-	if (ImGui::Button("Edit"))
-	{
-		m_bEditEnchant = !m_bEditEnchant;
-	}
+	if (ImGui::Button("Add to Inventory")) this->SendItemSpawn(0);
 	ImGui::SameLine();
-	if (ImGui::Button("Save"))
-	{
-		runtime_export_settings("RenderEffect.txt");
-	}
+	if (ImGui::Button("Drop")) this->SendItemSpawn(1);
+	ImGui::SameLine();
+	if (ImGui::Button("Create Set")) this->SendItemSpawn(2);
 }
 
 void SEASON3B::CGFxEffectHandle::RenderButtons()
@@ -535,7 +824,7 @@ void SEASON3B::ComboBoxGird::Render(const char* nameId, const char* error)
 			}
 			if (isSelected)
 			{
-				ImGui::SetItemDefaultFocus(); // Foco en la opción seleccionada
+				ImGui::SetItemDefaultFocus(); // Foco en la opciï¿½n seleccionada
 			}
 		}
 		ImGui::EndCombo();

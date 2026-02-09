@@ -1433,6 +1433,146 @@ bool CCommandManager::CommandDrop(LPOBJ lpObj, char* arg) // OK
 	return 1;
 }
 
+void CCommandManager::CGGMItemSpawnRecv(PMSG_GM_ITEM_SPAWN_RECV* lpMsg, int aIndex)
+{
+	LPOBJ lpObj = &gObj[aIndex];
+
+	if (lpObj->Type != OBJECT_USER)
+	{
+		return;
+	}
+
+	if (gGameMaster.CheckGameMasterLevel(lpObj, 1) == 0)
+	{
+		return;
+	}
+
+	int index = MAKE_NUMBERW(lpMsg->itemIndex[0], lpMsg->itemIndex[1]);
+
+	if (CHECK_ITEM(index) == -1)
+	{
+		return;
+	}
+
+	ITEM_INFO ItemInfo;
+	if (gItemManager.GetInfo(index, &ItemInfo) == 0)
+	{
+		gNotice.GCNoticeSend(lpObj->Index, 1, 0, 0, 0, 0, 0, "GM Menu: item %d not found on server", index);
+		return;
+	}
+
+	int level = lpMsg->level;
+	int skill = lpMsg->skill;
+	int luck = lpMsg->luck;
+	int option = lpMsg->option;
+	int exc = lpMsg->exc;
+	int set = lpMsg->set;
+	int socket = lpMsg->socket;
+	int count = lpMsg->count;
+
+	if (level < 0) level = 0;
+	if (level > 15) level = 15;
+	if (skill != 0) skill = 1;
+	if (luck != 0) luck = 1;
+	if (option < 0) option = 0;
+	if (option > 7) option = 7;
+	if (exc < 0) exc = 0;
+	if (exc > 63) exc = 63;
+	if (set < 0) set = 0;
+	if (set > 255) set = 255;
+	if (socket < 0) socket = 0;
+	if (socket > MAX_SOCKET_OPTION) socket = MAX_SOCKET_OPTION;
+	if (count < 1) count = 1;
+	if (count > 100) count = 100;
+
+	BYTE ItemSocketOption[MAX_SOCKET_OPTION] = { 0xFF,0xFF,0xFF,0xFF,0xFF };
+	for (int n = 0; n < socket; n++)
+	{
+		ItemSocketOption[n] = 0xFE;
+	}
+
+	if (lpMsg->action == 0)
+	{
+		int created = 0;
+		for (int n = 0; n < count; n++)
+		{
+			if (gItemManager.CheckItemInventorySpace(lpObj, index) == 0)
+			{
+				break;
+			}
+
+			GDCreateItemSend(lpObj->Index, 0xEB, 0, 0, index, level, 0, skill, luck, option, -1, exc, set, 0, 0, ItemSocketOption, 0xFF, 0);
+			created++;
+		}
+		gNotice.GCNoticeSend(lpObj->Index, 1, 0, 0, 0, 0, 0, "GM Menu: inventory +%d (item %d)", created, index);
+		return;
+	}
+
+	if (lpMsg->action == 1)
+	{
+		int created = 0;
+		for (int n = 0; n < count; n++)
+		{
+			GDCreateItemSend(lpObj->Index, lpObj->Map, (BYTE)lpObj->X, (BYTE)lpObj->Y, index, level, 0, skill, luck, option, -1, exc, set, 0, 0, ItemSocketOption, 0xFF, 0);
+			created++;
+		}
+		gNotice.GCNoticeSend(lpObj->Index, 1, 0, 0, 0, 0, 0, "GM Menu: dropped %d (item %d)", created, index);
+		return;
+	}
+
+	if (lpMsg->action == 2)
+	{
+		int section = index / MAX_ITEM_TYPE;
+		int type = index % MAX_ITEM_TYPE;
+
+		if (section < 7 || section > 11)
+		{
+			gNotice.GCNoticeSend(lpObj->Index, 1, 0, 0, 0, 0, 0, "GM Menu: Create Set works for sections 7..11 only");
+			return;
+		}
+
+		int created = 0;
+		for (int setSection = 7; setSection <= 11; setSection++)
+		{
+			int setIndex = GET_ITEM(setSection, type);
+			bool haveItem = false;
+
+			for (int n = 0; n < INVENTORY_SIZE; n++)
+			{
+				if (lpObj->Inventory[n].IsItem() == 0)
+				{
+					continue;
+				}
+
+				if (lpObj->Inventory[n].m_Index == setIndex)
+				{
+					haveItem = true;
+					break;
+				}
+			}
+
+			if (haveItem != false)
+			{
+				continue;
+			}
+
+			if (gItemManager.GetInfo(setIndex, &ItemInfo) == 0)
+			{
+				continue;
+			}
+
+			if (gItemManager.CheckItemInventorySpace(lpObj, setIndex) == 0)
+			{
+				break;
+			}
+
+			GDCreateItemSend(lpObj->Index, 0xEB, 0, 0, setIndex, level, 0, skill, luck, option, -1, exc, set, 0, 0, ItemSocketOption, 0xFF, 0);
+			created++;
+		}
+		gNotice.GCNoticeSend(lpObj->Index, 1, 0, 0, 0, 0, 0, "GM Menu: set +%d (type %d)", created, type);
+	}
+}
+
 bool CCommandManager::CommandSkin(LPOBJ lpObj, char* arg) // OK
 {
 	char name[11] = { 0 };

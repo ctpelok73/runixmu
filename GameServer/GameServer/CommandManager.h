@@ -362,6 +362,8 @@ public:
 	bool CommandStartInvasion(LPOBJ lpObj,char* arg);
 	bool CommandStartCustomArena(LPOBJ lpObj,char* arg);
 
+	void CGGMItemSpawnRecv(PMSG_GM_ITEM_SPAWN_RECV* lpMsg, int aIndex);
+
 #ifdef EVENT_FIND_PATH_NPC_CLIK
 	bool CommandStartFindPathToNpc(LPOBJ lpObj, char* arg);
 #endif // EVENT_FIND_PATH_NPC_CLIK
