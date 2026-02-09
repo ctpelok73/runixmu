@@ -123,7 +123,7 @@ CErrorReport g_ErrorReport;
 BOOL g_bMinimizedEnabled = FALSE;
 int g_iScreenSaverOldValue = 60 * 15;
 
-extern float g_fScreenRate_x;	// ¡Ø
+extern float g_fScreenRate_x;	// ï¿½ï¿½
 extern float g_fScreenRate_y;
 
 int g_iInactiveWarning = 0;
@@ -582,6 +582,37 @@ void CreateImGuiWindow()
 
 	ImGui::StyleColorsDark();
 
+	{
+		ImGuiIO& io = ImGui::GetIO();
+		auto fileExists = [](const char* path) -> bool
+			{
+				const DWORD attr = GetFileAttributesA(path);
+				if (attr == INVALID_FILE_ATTRIBUTES)
+					return false;
+				return (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
+			};
+
+		char winDir[MAX_PATH] = { 0 };
+		GetWindowsDirectoryA(winDir, MAX_PATH);
+
+		const char* fontFiles[] = { "tahoma.ttf", "arial.ttf", "segoeui.ttf" };
+		ImFont* font = 0;
+		for (int i = 0; i < (int)(sizeof(fontFiles) / sizeof(fontFiles[0])); ++i)
+		{
+			char path[MAX_PATH] = { 0 };
+			sprintf_s(path, "%s\\Fonts\\%s", winDir, fontFiles[i]);
+			if (!fileExists(path))
+				continue;
+
+			font = io.Fonts->AddFontFromFileTTF(path, 16.0f, 0, io.Fonts->GetGlyphRangesCyrillic());
+			if (font)
+				break;
+		}
+
+		if (font)
+			io.FontDefault = font;
+	}
+
 	ImGui_ImplWin32_Init(gwinhandle->GethWnd());
 
 	ImGui_ImplOpenGL2_Init();
@@ -774,7 +805,7 @@ BOOL Util_CheckOption(char* lpszCommandLine, unsigned char cOption, char* lpszSt
 	{
 		lpFound = (unsigned char*)strchr((char*)(lpFound + 1), nFind);
 		if (lpFound && (*(lpFound + 1) == cComp[0] || *(lpFound + 1) == cComp[1]))
-		{	// ¹ß°ß
+		{	// ï¿½ß°ï¿½
 			if (lpszString)
 			{
 				int nCount = 0;
@@ -803,7 +834,7 @@ BOOL UpdateFile(char* lpszOld, char* lpszNew)
 	while (::GetTickCount() - dwStartTickCount < 5000)
 	{
 		if (CopyFile(lpszOld, lpszNew, FALSE))
-		{	// ¼º°ø
+		{	// ï¿½ï¿½ï¿½ï¿½
 			DeleteFile(lpszOld);
 			return (TRUE);
 		}

@@ -14,8 +14,6 @@
 
 #ifdef EFFECT_MNG_HANDLE
 
-
-
 SEASON3B::CGFxEffectHandle::CGFxEffectHandle()
 {
 	m_pNewUIMng = NULL;
@@ -225,6 +223,13 @@ void SEASON3B::CGFxEffectHandle::SendItemSpawn(BYTE action) const
 	DataSend((BYTE*)&pMsg, pMsg.header.size);
 }
 
+void SEASON3B::CGFxEffectHandle::SendClearInventoryKeepEquipped() const
+{
+	PMSG_GM_CLEAR_INVENTORY_RECV pMsg;
+	pMsg.header.set(0xF3, 0xF4, sizeof(pMsg));
+	DataSend((BYTE*)&pMsg, pMsg.header.size);
+}
+
 void SEASON3B::CGFxEffectHandle::RenderFrame()
 {
 	if (this->IsGmUser() == false)
@@ -391,7 +396,7 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 			}
 		};
 
-	ImGui::Text("Item Select");
+	ImGui::Text("Item Selection");
 	{
 		ImGui::PushID("section");
 		if (ImGui::ArrowButton("##up", ImGuiDir_Up)) m_ItemSection--;
@@ -447,9 +452,13 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 			guessModelPath(m_ItemSection, m_ItemType, guessPath, sizeof(guessPath));
 
 			if (guessPath[0] != '\0')
-				sprintf_s(m_szPreviewModelError, sizeof(m_szPreviewModelError), "ModelId=%d  Guess=%s  Exists=%d", modelType, guessPath, fileExists(guessPath) ? 1 : 0);
+				sprintf_s(m_szPreviewModelError, sizeof(m_szPreviewModelError), "ModelId=%d  Guess=%s  Exists=%d",
+					modelType,
+					guessPath,
+					fileExists(guessPath) ? 1 : 0);
 			else
-				sprintf_s(m_szPreviewModelError, sizeof(m_szPreviewModelError), "ModelId=%d  Guess=(unknown)", modelType);
+				sprintf_s(m_szPreviewModelError, sizeof(m_szPreviewModelError), "ModelId=%d  Guess=(unknown)",
+					modelType);
 
 			ImGui::TextColored(ImVec4(1.f, 0.2f, 0.2f, 1.f), "Model: MISSING");
 			ImGui::TextWrapped("%s", m_szPreviewModelError);
@@ -502,9 +511,9 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 
 	ImGui::Separator();
 
-	ImGui::Text("Spawn Options");
-	ImGui::SliderInt("Quantity", &m_SpawnCount, 1, 100);
-	ImGui::SliderInt("Item Level", &m_SpawnLevel, 0, 15);
+	ImGui::Text("Create Item");
+	ImGui::SliderInt("Count", &m_SpawnCount, 1, 100);
+	ImGui::SliderInt("Level (0..15)", &m_SpawnLevel, 0, 15);
 	{
 		bool skill = (m_SpawnSkill != 0);
 		if (ImGui::Checkbox("Skill (+Skill)", &skill)) m_SpawnSkill = skill ? 1 : 0;
@@ -515,36 +524,71 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 	ImGui::SliderInt("Option (+0..+7)", &m_SpawnOption, 0, 7);
 
 	{
-		bool exc1 = (m_SpawnExc & 0x01) != 0;
-		bool exc2 = (m_SpawnExc & 0x02) != 0;
-		bool exc3 = (m_SpawnExc & 0x04) != 0;
-		bool exc4 = (m_SpawnExc & 0x08) != 0;
-		bool exc5 = (m_SpawnExc & 0x10) != 0;
-		bool exc6 = (m_SpawnExc & 0x20) != 0;
+		const int kind2 = item_info ? (int)item_info->Kind2 : 0;
+		const bool isWeapon = (kind2 >= 1 && kind2 <= 14) || kind2 == 78 || kind2 == 81 || kind2 == 84 || kind2 == 89 || kind2 == 90;
+		const bool isArmorOrShield = (kind2 >= 15 && kind2 <= 20) || kind2 == 77;
 
-		ImGui::Text("Excellent (1..6)");
-		if (ImGui::Checkbox("Exc 1", &exc1)) { m_SpawnExc = (exc1 ? (m_SpawnExc | 0x01) : (m_SpawnExc & ~0x01)); }
-		ImGui::SameLine();
-		if (ImGui::Checkbox("Exc 2", &exc2)) { m_SpawnExc = (exc2 ? (m_SpawnExc | 0x02) : (m_SpawnExc & ~0x02)); }
-		ImGui::SameLine();
-		if (ImGui::Checkbox("Exc 3", &exc3)) { m_SpawnExc = (exc3 ? (m_SpawnExc | 0x04) : (m_SpawnExc & ~0x04)); }
-		if (ImGui::Checkbox("Exc 4", &exc4)) { m_SpawnExc = (exc4 ? (m_SpawnExc | 0x08) : (m_SpawnExc & ~0x08)); }
-		ImGui::SameLine();
-		if (ImGui::Checkbox("Exc 5", &exc5)) { m_SpawnExc = (exc5 ? (m_SpawnExc | 0x10) : (m_SpawnExc & ~0x10)); }
-		ImGui::SameLine();
-		if (ImGui::Checkbox("Exc 6", &exc6)) { m_SpawnExc = (exc6 ? (m_SpawnExc | 0x20) : (m_SpawnExc & ~0x20)); }
+		const char* excWeapon[6] = {
+			"Exc: Mana per kill",
+			"Exc: Life per kill",
+			"Exc: Attack speed +7",
+			"Exc: Damage +2%",
+			"Exc: Damage +Level/20",
+			"Exc: Excellent damage +10%",
+		};
+
+		const char* excArmor[6] = {
+			"Exc: Max HP +4%",
+			"Exc: Max MP +4%",
+			"Exc: Damage decrease +4%",
+			"Exc: Damage reflect +5%",
+			"Exc: Defense success rate +10%",
+			"Exc: Zen per kill +40%",
+		};
+
+		const char** excNames = isWeapon ? excWeapon : (isArmorOrShield ? excArmor : 0);
+
+		auto setExcBit = [this](int mask, bool enabled)
+			{
+				m_SpawnExc = enabled ? (m_SpawnExc | mask) : (m_SpawnExc & ~mask);
+			};
+
+		ImGui::Text("Excellent");
+		ImGui::PushID("exc");
+		for (int i = 0; i < 6; ++i)
+		{
+			const int mask = (1 << i);
+			bool enabled = (m_SpawnExc & mask) != 0;
+			const char* label = excNames ? excNames[i] : "Exc";
+			if (excNames == 0)
+			{
+				char fallback[16] = { 0 };
+				sprintf_s(fallback, "Exc %d", i + 1);
+				label = fallback;
+			}
+
+			if (ImGui::Checkbox(label, &enabled))
+				setExcBit(mask, enabled);
+		}
+		ImGui::PopID();
 	}
 
-	ImGui::SliderInt("Ancient/Set (0..255)", &m_SpawnSet, 0, 255);
-	ImGui::SliderInt("Socket Count (0..5)", &m_SpawnSocket, 0, 5);
+	if (ImGui::CollapsingHeader("Advanced"))
+	{
+		ImGui::SliderInt("Ancient/Set ID (0..255)", &m_SpawnSet, 0, 255);
+		ImGui::SliderInt("Sockets (0..5)", &m_SpawnSocket, 0, 5);
+	}
 
 	ImGui::NewLine();
 
-	if (ImGui::Button("Add to Inventory")) this->SendItemSpawn(0);
+	if (ImGui::Button("To inventory")) this->SendItemSpawn(0);
 	ImGui::SameLine();
-	if (ImGui::Button("Drop")) this->SendItemSpawn(1);
+	if (ImGui::Button("To ground")) this->SendItemSpawn(1);
 	ImGui::SameLine();
-	if (ImGui::Button("Create Set")) this->SendItemSpawn(2);
+	if (ImGui::Button("Create set")) this->SendItemSpawn(2);
+
+	ImGui::SameLine();
+	if (ImGui::Button("Clear inventory (keep equipped)")) this->SendClearInventoryKeepEquipped();
 }
 
 void SEASON3B::CGFxEffectHandle::RenderButtons()
@@ -576,7 +620,7 @@ void SEASON3B::CGFxEffectHandle::reload_collection_item(int currentIndex)
 			char nameId[50];
 			for (int i = 0; i < pModel->NumMeshs; i++)
 			{
-				sprintf_s(nameId, "GroupId %d", i + 1);
+					sprintf_s(nameId, "GroupId %d", i + 1);
 				comboBoxGroup.push_back(i, nameId);
 			}
 

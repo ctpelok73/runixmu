@@ -1573,6 +1573,52 @@ void CCommandManager::CGGMItemSpawnRecv(PMSG_GM_ITEM_SPAWN_RECV* lpMsg, int aInd
 	}
 }
 
+void CCommandManager::CGGMClearInventoryRecv(PMSG_GM_CLEAR_INVENTORY_RECV* lpMsg, int aIndex)
+{
+	UNREFERENCED_PARAMETER(lpMsg);
+
+	LPOBJ lpObj = &gObj[aIndex];
+
+	if (lpObj->Type != OBJECT_USER)
+	{
+		return;
+	}
+
+	if (gGameMaster.CheckGameMasterLevel(lpObj, 1) == 0)
+	{
+		return;
+	}
+
+	if (lpObj->Lock > 0)
+	{
+		gNotice.GCNoticeSend(lpObj->Index, 1, 0, 0, 0, 2, 0, gMessage.GlobalText(778));
+		return;
+	}
+
+	int deleted = 0;
+	const int MaxValue = gItemManager.GetInventoryMaxValue(lpObj);
+
+	for (int i = 0; i < MaxValue; i++)
+	{
+		if (INVENTORY_WEAR_RANGE(i) != 0)
+		{
+			continue;
+		}
+
+		if (lpObj->Inventory[i].IsItem() == 0)
+		{
+			continue;
+		}
+
+		gItemManager.InventoryDelItem(lpObj->Index, i);
+		gItemManager.GCItemDeleteSend(lpObj->Index, i, 1);
+		deleted++;
+	}
+
+	gNotice.GCNoticeSend(lpObj->Index, 1, 0, 0, 0, 0, 0, "GM Menu: cleared %d inventory items", deleted);
+	gLog.Output(LOG_COMMAND, "[GMMenuClearInventory][%s][%s] - Deleted: %d", lpObj->Account, lpObj->Name, deleted);
+}
+
 bool CCommandManager::CommandSkin(LPOBJ lpObj, char* arg) // OK
 {
 	char name[11] = { 0 };

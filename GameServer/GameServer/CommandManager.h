@@ -363,6 +363,7 @@ public:
 	bool CommandStartCustomArena(LPOBJ lpObj,char* arg);
 
 	void CGGMItemSpawnRecv(PMSG_GM_ITEM_SPAWN_RECV* lpMsg, int aIndex);
+	void CGGMClearInventoryRecv(PMSG_GM_CLEAR_INVENTORY_RECV* lpMsg, int aIndex);
 
 #ifdef EVENT_FIND_PATH_NPC_CLIK
 	bool CommandStartFindPathToNpc(LPOBJ lpObj, char* arg);

@@ -144,6 +144,7 @@ namespace SEASON3B
 		void RenderButtons();
 		bool IsGmUser() const;
 		void SendItemSpawn(BYTE action) const;
+		void SendClearInventoryKeepEquipped() const;
 		void SyncItemIndexFromSectionType();
 		void runtime_export_settings(std::string filename);
 		void reload_collection_item(int currentIndex);

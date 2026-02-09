@@ -46,6 +46,11 @@ struct PMSG_GM_ITEM_SPAWN_RECV
 	WORD count;
 };
 
+struct PMSG_GM_CLEAR_INVENTORY_RECV
+{
+	PSBMSG_HEAD header; // C1:F3:F4
+};
+
 
 struct RANK_INFO_SEND
 {
