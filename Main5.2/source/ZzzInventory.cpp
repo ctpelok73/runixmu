@@ -4361,12 +4361,16 @@ void RenderItem3D(float sx, float sy, float Width, float Height, int Type, int L
 		pos[1] = RectItem3D->Y;
 
 		VectorCopy(RectItem3D->angle, ItemAngle);
-		{
-			extern bool g_GMMenuPreviewActive;
-			extern bool g_GMMenuPreviewAutoRotate;
-			extern float g_GMMenuPreviewRotateY;
+		extern bool g_GMMenuPreviewActive;
+		extern bool g_GMMenuPreviewAutoRotate;
+		extern float g_GMMenuPreviewRotateY;
 
-			if (g_GMMenuPreviewActive && g_GMMenuPreviewAutoRotate)
+		if (g_GMMenuPreviewActive)
+		{
+			pos[0] = 0.5f;
+			pos[1] = 0.5f;
+
+			if (g_GMMenuPreviewAutoRotate)
 			{
 				ItemAngle[1] += g_GMMenuPreviewRotateY;
 			}

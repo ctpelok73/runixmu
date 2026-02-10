@@ -418,7 +418,7 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 		if (s_previewAutoRotate)
 		{
 			const float dt = (io.DeltaTime > 0.0f) ? io.DeltaTime : 0.0f;
-			s_previewRotY += dt * 30.0f;
+			s_previewRotY += dt * 120.0f;
 			if (s_previewRotY > 360.0f)
 				s_previewRotY -= 360.0f;
 		}
@@ -623,6 +623,12 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 		};
 
 	ImGui::Text("Item Selection");
+	ImGuiIO& io = ImGui::GetIO();
+	const float oldRepeatDelay = io.KeyRepeatDelay;
+	const float oldRepeatRate = io.KeyRepeatRate;
+	io.KeyRepeatDelay = 0.20f;
+	io.KeyRepeatRate = 0.04f;
+	ImGui::PushButtonRepeat(true);
 	{
 		ImGui::PushID("section");
 		if (ImGui::ArrowButton("##up", ImGuiDir_Up)) m_ItemSection--;
@@ -641,6 +647,9 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 		ImGui::Text("Type: %d", m_ItemType);
 		ImGui::PopID();
 	}
+	ImGui::PopButtonRepeat();
+	io.KeyRepeatDelay = oldRepeatDelay;
+	io.KeyRepeatRate = oldRepeatRate;
 
 	if (m_ItemSection < 0) m_ItemSection = 0;
 	if (m_ItemSection > 15) m_ItemSection = 15;
