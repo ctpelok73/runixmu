@@ -258,25 +258,55 @@ bool SEASON3B::CGFxEffectHandle::UpdateKeyEvent()
 		}
 
 		bool changed = false;
+		const DWORD nowTick = GetTickCount();
+		static int s_holdKey = 0;
+		static DWORD s_nextRepeatTick = 0;
 
-		if (SEASON3B::IsPress(VK_UP))
+		auto applyKey = [&](int vk, int sectionDelta, int typeDelta) -> bool
 		{
-			m_ItemSection--;
+			const bool pressed = SEASON3B::IsPress(vk);
+			const bool held = SEASON3B::IsRepeat(vk);
+
+			if (!held && s_holdKey == vk)
+			{
+				s_holdKey = 0;
+				s_nextRepeatTick = 0;
+			}
+
+			if (pressed)
+			{
+				m_ItemSection += sectionDelta;
+				m_ItemType += typeDelta;
+				s_holdKey = vk;
+				s_nextRepeatTick = nowTick + 300;
+				return true;
+			}
+
+			if (held && s_holdKey == vk && nowTick >= s_nextRepeatTick)
+			{
+				m_ItemSection += sectionDelta;
+				m_ItemType += typeDelta;
+				s_nextRepeatTick = nowTick + 90;
+				return true;
+			}
+
+			return false;
+		};
+
+		if (applyKey(VK_UP, -1, 0))
+		{
 			changed = true;
 		}
-		else if (SEASON3B::IsPress(VK_DOWN))
+		else if (applyKey(VK_DOWN, 1, 0))
 		{
-			m_ItemSection++;
 			changed = true;
 		}
-		else if (SEASON3B::IsPress(VK_LEFT))
+		else if (applyKey(VK_LEFT, 0, -1))
 		{
-			m_ItemType--;
 			changed = true;
 		}
-		else if (SEASON3B::IsPress(VK_RIGHT))
+		else if (applyKey(VK_RIGHT, 0, 1))
 		{
-			m_ItemType++;
 			changed = true;
 		}
 
@@ -402,14 +432,12 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 	// Iniciar frame de ImGui
 	ImGui::NewFrame();
 
-	ImGui::SetNextWindowPos(ImVec2(m_Pos.x * g_fScreenRate_x, m_Pos.y * g_fScreenRate_y));
-	ImGui::SetNextWindowSize(ImVec2(560.f * g_fScreenRate_x, 340.f * g_fScreenRate_y));
+	ImGui::SetNextWindowPos(ImVec2(m_Pos.x * g_fScreenRate_x, m_Pos.y * g_fScreenRate_y), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(ImVec2(560.f * g_fScreenRate_x, 340.f * g_fScreenRate_y), ImGuiCond_FirstUseEver);
 
 	static bool GraphicImage = false;
-	static float s_previewZoom = 1.35f;
 	static ImVec2 s_previewRectMin = ImVec2(0, 0);
 	static ImVec2 s_previewRectMax = ImVec2(0, 0);
-	static bool s_previewHovered = false;
 	static bool s_previewAutoRotate = false;
 	static float s_previewRotY = 0.0f;
 
@@ -424,7 +452,7 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 		}
 	}
 
-	ImGui::Begin("RenderMesh Tools", &GraphicImage, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse);
+	ImGui::Begin("RenderMesh Tools", &GraphicImage, ImGuiWindowFlags_NoCollapse);
 
 	// Secci�n 1: Arriba izquierda
 	ImGui::BeginChild("Child1", ImVec2((220 * g_fScreenRate_x), 0), ImGuiChildFlags_Border);
@@ -432,7 +460,7 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 	ImGui::BeginChild("Sub-Child1", ImVec2(0, (200.f * g_fScreenRate_y)), ImGuiChildFlags_Border);
 	{
 		ImGui::SetCursorPos(ImVec2(6.0f * g_fScreenRate_x, 6.0f * g_fScreenRate_y));
-		ImGui::Text("Preview (wheel zoom: %.0f%%)", s_previewZoom * 100.0f);
+		ImGui::Text("Preview");
 		ImGui::SetCursorPos(ImVec2(6.0f * g_fScreenRate_x, 24.0f * g_fScreenRate_y));
 		ImGui::Checkbox("Auto rotate", &s_previewAutoRotate);
 		if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
@@ -443,18 +471,6 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 		ImGui::InvisibleButton("##preview_capture", avail);
 		s_previewRectMin = ImGui::GetItemRectMin();
 		s_previewRectMax = ImGui::GetItemRectMax();
-		s_previewHovered = ImGui::IsItemHovered();
-
-		if (s_previewHovered)
-		{
-			const float wheel = ImGui::GetIO().MouseWheel;
-			if (wheel != 0.0f)
-			{
-				s_previewZoom += wheel * 0.10f;
-				if (s_previewZoom < 0.50f) s_previewZoom = 0.50f;
-				if (s_previewZoom > 3.00f) s_previewZoom = 3.00f;
-			}
-		}
 	}
 	ImGui::EndChild();
 
@@ -495,19 +511,18 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 			const float previewW = (s_previewRectMax.x - s_previewRectMin.x) / g_fScreenRate_x;
 			const float previewH = (s_previewRectMax.y - s_previewRectMin.y) / g_fScreenRate_y;
 
-			const float cx = previewX + (previewW * 0.5f);
-			const float cy = previewY + (previewH * 0.5f);
-
-			const float itemW = (float)item_info->Getwidth() * s_previewZoom;
-			const float itemH = (float)item_info->Getheight() * s_previewZoom;
+			const float boxW = previewW * 0.85f;
+			const float boxH = previewH * 0.85f;
+			const float sx = previewX + ((previewW - boxW) * 0.5f);
+			const float sy = previewY + ((previewH - boxH) * 0.5f);
 
 			SEASON3B::begin3D();
 			g_GMMenuPreviewActive = true;
 			RenderItem3D(
-				cx - (itemW * 0.5f),
-				cy - (itemH * 0.5f),
-				itemW,
-				itemH,
+				sx,
+				sy,
+				boxW,
+				boxH,
 				selectedItem,
 				(m_SpawnLevel << 3),
 				0,
@@ -516,7 +531,8 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 				previewX,
 				previewY,
 				previewW,
-				previewH);
+				previewH,
+				0.0f);
 			g_GMMenuPreviewActive = false;
 			SEASON3B::endrender3D();
 		}
@@ -626,8 +642,8 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 	ImGuiIO& io = ImGui::GetIO();
 	const float oldRepeatDelay = io.KeyRepeatDelay;
 	const float oldRepeatRate = io.KeyRepeatRate;
-	io.KeyRepeatDelay = 0.20f;
-	io.KeyRepeatRate = 0.04f;
+	io.KeyRepeatDelay = 0.35f;
+	io.KeyRepeatRate = 0.10f;
 	ImGui::PushButtonRepeat(true);
 	{
 		ImGui::PushID("section");

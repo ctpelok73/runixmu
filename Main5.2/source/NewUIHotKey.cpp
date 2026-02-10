@@ -397,7 +397,7 @@ bool SEASON3B::CNewUIHotKey::UpdateKeyEvent()
 #endif // EFFECT_KERNEL_VERTEX
 
 #ifdef EFFECT_MNG_HANDLE
-			if (SEASON3B::IsPress(VK_F11))
+			if (SEASON3B::IsPress(VK_PAUSE))
 			{
 				if (g_isCharacterBuff((&Hero->Object), eBuff_GMEffect) || ((Hero->CtlCode == CTLCODE_20OPERATOR) || (Hero->CtlCode == CTLCODE_08OPERATOR)))
 				{
