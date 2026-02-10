@@ -334,6 +334,11 @@ bool SEASON3B::CGFxEffectHandle::Update()
 
 bool SEASON3B::CGFxEffectHandle::Render()
 {
+	if (IsVisible() == false)
+	{
+		return true;
+	}
+
 	EnableAlphaTest();
 
 	glColor4f(1.f, 1.f, 1.f, 1.f);
@@ -435,11 +440,11 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 	ImGui::SetNextWindowPos(ImVec2(m_Pos.x * g_fScreenRate_x, m_Pos.y * g_fScreenRate_y), ImGuiCond_FirstUseEver);
 	ImGui::SetNextWindowSize(ImVec2(560.f * g_fScreenRate_x, 340.f * g_fScreenRate_y), ImGuiCond_FirstUseEver);
 
-	static bool GraphicImage = false;
 	static ImVec2 s_previewRectMin = ImVec2(0, 0);
 	static ImVec2 s_previewRectMax = ImVec2(0, 0);
 	static bool s_previewAutoRotate = false;
 	static float s_previewRotY = 0.0f;
+	bool previewRectValid = false;
 
 	{
 		ImGuiIO& io = ImGui::GetIO();
@@ -452,44 +457,50 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 		}
 	}
 
-	ImGui::Begin("RenderMesh Tools", &GraphicImage, ImGuiWindowFlags_NoCollapse);
+	bool windowOpen = true;
+	const bool windowVisible = ImGui::Begin("RenderMesh Tools", &windowOpen, ImGuiWindowFlags_NoCollapse);
 
-	// Secci�n 1: Arriba izquierda
-	ImGui::BeginChild("Child1", ImVec2((220 * g_fScreenRate_x), 0), ImGuiChildFlags_Border);
-
-	ImGui::BeginChild("Sub-Child1", ImVec2(0, (200.f * g_fScreenRate_y)), ImGuiChildFlags_Border);
+	if (windowVisible)
 	{
-		ImGui::SetCursorPos(ImVec2(6.0f * g_fScreenRate_x, 6.0f * g_fScreenRate_y));
-		ImGui::Text("Preview");
-		ImGui::SetCursorPos(ImVec2(6.0f * g_fScreenRate_x, 24.0f * g_fScreenRate_y));
-		ImGui::Checkbox("Auto rotate", &s_previewAutoRotate);
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-			ImGui::SetTooltip("Automatically rotates the preview model.");
+		ImGui::BeginChild("Child1", ImVec2((220 * g_fScreenRate_x), 0), ImGuiChildFlags_Border);
 
-		ImGui::SetCursorPos(ImVec2(0.0f, 44.0f * g_fScreenRate_y));
-		const ImVec2 avail = ImGui::GetContentRegionAvail();
-		ImGui::InvisibleButton("##preview_capture", avail);
-		s_previewRectMin = ImGui::GetItemRectMin();
-		s_previewRectMax = ImGui::GetItemRectMax();
+		ImGui::BeginChild("Sub-Child1", ImVec2(0, (200.f * g_fScreenRate_y)), ImGuiChildFlags_Border);
+		{
+			ImGui::SetCursorPos(ImVec2(6.0f * g_fScreenRate_x, 6.0f * g_fScreenRate_y));
+			ImGui::Text("Preview");
+			ImGui::SetCursorPos(ImVec2(6.0f * g_fScreenRate_x, 24.0f * g_fScreenRate_y));
+			ImGui::Checkbox("Auto rotate", &s_previewAutoRotate);
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+				ImGui::SetTooltip("Automatically rotates the preview model.");
+
+			ImGui::SetCursorPos(ImVec2(0.0f, 44.0f * g_fScreenRate_y));
+			const ImVec2 avail = ImGui::GetContentRegionAvail();
+			ImGui::InvisibleButton("##preview_capture", avail);
+			s_previewRectMin = ImGui::GetItemRectMin();
+			s_previewRectMax = ImGui::GetItemRectMax();
+			previewRectValid = true;
+		}
+		ImGui::EndChild();
+
+		ImGui::BeginChild("Sub-Child2", ImVec2(0, 0), ImGuiChildFlags_Border);
+		{
+			ImGui::Text("Preview controls");
+			ImGui::SliderFloat("Rotate Y", &s_previewRotY, 0.0f, 360.0f, "%.1f deg");
+			ImGui::SameLine();
+			if (ImGui::Button("Reset"))
+				s_previewRotY = 0.0f;
+		}
+		ImGui::EndChild();
+
+		ImGui::EndChild();
+
+		ImGui::SameLine();
+		ImGui::BeginChild("Child2", ImVec2(0, 0), ImGuiChildFlags_Border);
+
+		this->RenderContents();
+
+		ImGui::EndChild();
 	}
-	ImGui::EndChild();
-
-	ImGui::BeginChild("Sub-Child2", ImVec2(0, 0), ImGuiChildFlags_Border);
-
-	//EditEnchantList.Render("##GroupDataMesh");
-
-	ImGui::EndChild();
-
-	// Contenido de la primera secci�n
-	ImGui::EndChild();
-
-	ImGui::SameLine();
-	ImGui::BeginChild("Child2", ImVec2(0, 0), ImGuiChildFlags_Border);
-
-	this->RenderContents();
-
-	ImGui::EndChild();
-
 	ImGui::End();
 
 	ImGui::Render();
@@ -497,7 +508,13 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 	ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
 
 	//------------------
-	if (selectedItem != -1 && m_bPreviewModelOk)
+	if (windowOpen == false)
+	{
+		g_pNewUISystem->Hide(INTERFACE_EFFECT_MANAGER);
+		return;
+	}
+
+	if (previewRectValid && selectedItem != -1 && m_bPreviewModelOk)
 	{
 		Script_Item* item_info = GMItemMng->find(selectedItem);
 
