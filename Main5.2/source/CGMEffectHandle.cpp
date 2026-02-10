@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <cstdarg>
 
 #include "imgui_impl_win32.h"
 #include "imgui_impl_opengl2.h"
@@ -172,12 +173,30 @@ extern bool g_GMMenuPreviewActive;
 extern bool g_GMMenuPreviewAutoRotate;
 extern float g_GMMenuPreviewRotateY;
 
+static bool s_gmAuditAutoLog = true;
+static bool s_gmAuditLogMissingModels = true;
+static bool s_gmAuditLogMissingTooltips = true;
+static bool s_gmAuditLogMissingName = false;
+static bool s_gmAuditLogMissingClientData = true;
+static bool s_gmAuditScanActive = false;
+static int s_gmAuditScanIndex = 0;
+static int s_gmAuditScanTotal = 0;
+static int s_gmAuditScanBatch = 64;
+static int s_gmAuditIssuesMissingModel = 0;
+static int s_gmAuditIssuesMissingTooltip = 0;
+static int s_gmAuditIssuesMissingName = 0;
+static int s_gmAuditIssuesMissingClientData = 0;
+static int s_gmAuditLastIssueItem = -1;
+static char s_gmAuditLastIssue[256] = { 0 };
+static bool s_gmAuditReportInit = false;
+static std::set<unsigned long long> s_gmAuditLoggedIssues;
+
 SEASON3B::CGFxEffectHandle::CGFxEffectHandle()
 {
 	m_pNewUIMng = NULL;
 	m_Pos.x = 0;
 	m_Pos.y = 0;
-	m_bEditEnchant = 0;
+	m_bEditEnchant = FALSE;
 	selectedItem = -1;
 	m_ItemSection = 0;
 	m_ItemType = 0;
@@ -191,7 +210,6 @@ SEASON3B::CGFxEffectHandle::CGFxEffectHandle()
 	m_SpawnSocket = 0;
 	m_bPreviewModelOk = false;
 	memset(m_szPreviewModelError, 0, sizeof(m_szPreviewModelError));
-	m_bEditEnchant = FALSE;
 
 	memset(&m_bSettings, 0, sizeof(m_bSettings));
 }
@@ -484,11 +502,49 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 
 		ImGui::BeginChild("Sub-Child2", ImVec2(0, 0), ImGuiChildFlags_Border);
 		{
-			ImGui::Text("Preview controls");
-			ImGui::SliderFloat("Rotate Y", &s_previewRotY, 0.0f, 360.0f, "%.1f deg");
+			ImGui::Text("Diagnostics");
+
+			ImGui::Checkbox("Auto log", &s_gmAuditAutoLog);
+			ImGui::Checkbox("Log missing model", &s_gmAuditLogMissingModels);
+			ImGui::Checkbox("Log missing tooltip", &s_gmAuditLogMissingTooltips);
+			ImGui::Checkbox("Log missing name", &s_gmAuditLogMissingName);
+			ImGui::Checkbox("Log missing client data", &s_gmAuditLogMissingClientData);
+
+			if (ImGui::Button("Scan all"))
+			{
+				s_gmAuditScanActive = true;
+				s_gmAuditScanIndex = 0;
+				s_gmAuditScanTotal = MAX_ITEM_LINE;
+				s_gmAuditLoggedIssues.clear();
+				s_gmAuditIssuesMissingModel = 0;
+				s_gmAuditIssuesMissingTooltip = 0;
+				s_gmAuditIssuesMissingName = 0;
+				s_gmAuditIssuesMissingClientData = 0;
+				s_gmAuditLastIssueItem = -1;
+				s_gmAuditLastIssue[0] = '\0';
+			}
 			ImGui::SameLine();
-			if (ImGui::Button("Reset"))
-				s_previewRotY = 0.0f;
+			if (ImGui::Button("Stop"))
+			{
+				s_gmAuditScanActive = false;
+			}
+
+			if (s_gmAuditScanTotal > 0)
+			{
+				const float p = (s_gmAuditScanIndex <= 0) ? 0.0f : (float)s_gmAuditScanIndex / (float)s_gmAuditScanTotal;
+				ImGui::ProgressBar(p, ImVec2(-1.0f, 0.0f));
+			}
+
+			ImGui::Text("Missing model: %d", s_gmAuditIssuesMissingModel);
+			ImGui::Text("Missing tooltip: %d", s_gmAuditIssuesMissingTooltip);
+			ImGui::Text("Missing name: %d", s_gmAuditIssuesMissingName);
+			ImGui::Text("Missing client data: %d", s_gmAuditIssuesMissingClientData);
+
+			if (s_gmAuditLastIssueItem >= 0 && s_gmAuditLastIssue[0] != '\0')
+			{
+				ImGui::Text("Last: %d", s_gmAuditLastIssueItem);
+				ImGui::TextWrapped("%s", s_gmAuditLastIssue);
+			}
 		}
 		ImGui::EndChild();
 
@@ -612,6 +668,51 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 				sprintf_s(outPath, outPathSize, "%s%s0%d.bmd", dir, prefix, idx);
 		};
 
+	auto gmAuditEnsureReport = []()
+		{
+			if (s_gmAuditReportInit)
+				return;
+			g_ErrorReport.Create("GMMenu_ItemAudit.log");
+			s_gmAuditReportInit = true;
+		};
+
+	auto gmAuditRecord = [&](int issueType, int itemIndex, bool shouldLog, const char* fmt, ...)
+		{
+			char msg[512] = { 0 };
+			va_list args;
+			va_start(args, fmt);
+			vsprintf_s(msg, fmt, args);
+			va_end(args);
+
+			s_gmAuditLastIssueItem = itemIndex;
+			strcpy_s(s_gmAuditLastIssue, msg);
+
+			const unsigned long long key = ((unsigned long long)(unsigned int)issueType << 32) | (unsigned long long)(unsigned int)itemIndex;
+			const bool firstTime = s_gmAuditLoggedIssues.insert(key).second;
+			if (firstTime)
+			{
+				switch (issueType)
+				{
+				case 1: s_gmAuditIssuesMissingModel++; break;
+				case 2: s_gmAuditIssuesMissingTooltip++; break;
+				case 3: s_gmAuditIssuesMissingName++; break;
+				case 4: s_gmAuditIssuesMissingClientData++; break;
+				default: break;
+				}
+			}
+
+			if (!firstTime)
+				return;
+
+			if (!shouldLog)
+				return;
+			if (!s_gmAuditAutoLog)
+				return;
+
+			gmAuditEnsureReport();
+			g_ErrorReport.Write("[GMMenu] %s\r\n", msg);
+		};
+
 	Script_Item* item_info = GMItemMng->find(selectedItem);
 
 	auto kind2Name = [](BYTE kind2) -> const char*
@@ -697,6 +798,7 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 	if (item_info == 0)
 	{
 		ImGui::TextColored(ImVec4(1.f, 0.2f, 0.2f, 1.f), "Client Data: MISSING (Item.bmd)");
+		gmAuditRecord(4, selectedItem, s_gmAuditLogMissingClientData, "Missing client data: item=%d", selectedItem);
 		return;
 	}
 
@@ -707,6 +809,7 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 	else
 	{
 		ImGui::Text("No name in Item.bmd");
+		gmAuditRecord(3, selectedItem, s_gmAuditLogMissingName, "Missing name: item=%d", selectedItem);
 	}
 
 	if (selectedItem >= 0)
@@ -737,34 +840,24 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 			ImGui::TextColored(ImVec4(1.f, 0.2f, 0.2f, 1.f), "Model: MISSING");
 			ImGui::TextWrapped("%s", m_szPreviewModelError);
 
-			static std::set<int> s_loggedMissingModels;
-			if (s_loggedMissingModels.insert(modelType).second)
-			{
-				static bool s_errorReportInit = false;
-				if (!s_errorReportInit)
-				{
-					g_ErrorReport.Create("GMMenu_MissingModels.log");
-					s_errorReportInit = true;
-				}
+			gmAuditRecord(1, selectedItem, s_gmAuditLogMissingModels,
+				"Missing model: item=%d section=%d type=%d modelId=%d guess=%s exists=%d",
+				selectedItem,
+				m_ItemSection,
+				m_ItemType,
+				modelType,
+				guessPath[0] ? guessPath : "(unknown)",
+				guessPath[0] ? (fileExists(guessPath) ? 1 : 0) : -1);
 
-				g_ErrorReport.Write("[GMMenu] Missing model: item=%d section=%d type=%d modelId=%d guess=%s exists=%d\r\n",
+			if (g_ConsoleDebug)
+			{
+				g_ConsoleDebug->Write(MCD_ERROR, "[GMMenu] Missing model: item=%d section=%d type=%d modelId=%d guess=%s exists=%d",
 					selectedItem,
 					m_ItemSection,
 					m_ItemType,
 					modelType,
 					guessPath[0] ? guessPath : "(unknown)",
 					guessPath[0] ? (fileExists(guessPath) ? 1 : 0) : -1);
-
-				if (g_ConsoleDebug)
-				{
-					g_ConsoleDebug->Write(MCD_ERROR, "[GMMenu] Missing model: item=%d section=%d type=%d modelId=%d guess=%s exists=%d",
-						selectedItem,
-						m_ItemSection,
-						m_ItemType,
-						modelType,
-						guessPath[0] ? guessPath : "(unknown)",
-						guessPath[0] ? (fileExists(guessPath) ? 1 : 0) : -1);
-				}
 			}
 		}
 	}
@@ -861,6 +954,7 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 		{
 			ImGui::TextColored(ImVec4(1.f, 0.2f, 0.2f, 1.f), "Tooltip: MISSING");
 			ImGui::TextWrapped("%s", reason);
+			gmAuditRecord(2, selectedItem, s_gmAuditLogMissingTooltips, "Missing tooltip: item=%d reason=%s", selectedItem, reason);
 		}
 	}
 #endif // PACK_FILE_DECRYPT_H
@@ -1047,6 +1141,106 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 
 	ImGui::SameLine();
 	if (ImGui::Button("Clear inventory (keep equipped)")) this->SendClearInventoryKeepEquipped();
+
+	if (s_gmAuditScanActive)
+	{
+		const int end = (s_gmAuditScanIndex + s_gmAuditScanBatch > s_gmAuditScanTotal) ? s_gmAuditScanTotal : (s_gmAuditScanIndex + s_gmAuditScanBatch);
+		for (int idx = s_gmAuditScanIndex; idx < end; ++idx)
+		{
+			Script_Item* scanItem = GMItemMng->find(idx);
+
+			if (scanItem == 0)
+			{
+				gmAuditRecord(4, idx, s_gmAuditLogMissingClientData, "Missing client data: item=%d", idx);
+				continue;
+			}
+
+			if (scanItem->Name[0] == '\0')
+			{
+				gmAuditRecord(3, idx, s_gmAuditLogMissingName, "Missing name: item=%d", idx);
+			}
+
+			const int modelId = MODEL_ITEM + idx;
+			BMD* scanModel = gmClientModels ? gmClientModels->GetModel(modelId) : 0;
+			const bool modelOk = (scanModel != 0 && scanModel->NumMeshs > 0 && scanModel->NumBones > 0 && scanModel->NumActions > 0);
+			if (!modelOk)
+			{
+				const int section = (idx >> 9);
+				const int type = (idx & 511);
+				char guessPath[260] = { 0 };
+				guessModelPath(section, type, guessPath, sizeof(guessPath));
+				gmAuditRecord(1, idx, s_gmAuditLogMissingModels,
+					"Missing model: item=%d section=%d type=%d modelId=%d guess=%s exists=%d",
+					idx,
+					section,
+					type,
+					modelId,
+					guessPath[0] ? guessPath : "(unknown)",
+					guessPath[0] ? (fileExists(guessPath) ? 1 : 0) : -1);
+			}
+
+#ifdef PACK_FILE_DECRYPT_H
+			{
+				bool tooltipOk = true;
+				char reason[256] = { 0 };
+
+				if (g_pNewItemTooltip == 0)
+				{
+					tooltipOk = false;
+					sprintf_s(reason, "Tooltip system not initialized");
+				}
+				else
+				{
+					_ITEM_TOOLTIP_DATA* tooltip = g_pNewItemTooltip->FindTooltip(idx);
+					if (tooltip == 0)
+					{
+						tooltipOk = false;
+						sprintf_s(reason, "No entry in itemtooltip.bmd (Data\\\\Local\\\\%s\\\\itemtooltip.bmd)", g_strSelectedML.c_str());
+					}
+					else
+					{
+						if (tooltip->ItemLevel >= 0)
+						{
+							const int findLevel = tooltip->ItemLevel;
+							if (g_pNewItemTooltip->FindLevelTooltip(findLevel) == 0)
+							{
+								tooltipOk = false;
+								sprintf_s(reason, "Missing ItemLevelTooltip index=%d (Data\\\\Local\\\\%s\\\\ItemLevelTooltip.bmd)", findLevel, g_strSelectedML.c_str());
+							}
+						}
+
+						int totalText = 0;
+						int missingText = 0;
+						for (int i = 0; i < 12; ++i)
+						{
+							const int textIndex = tooltip->TextInfo[i].Text;
+							if (textIndex <= 0)
+								continue;
+							totalText++;
+							if (g_pNewItemTooltip->FindTooltipText(textIndex) == 0)
+								missingText++;
+						}
+
+						if (tooltipOk && totalText > 0 && missingText == totalText)
+						{
+							tooltipOk = false;
+							sprintf_s(reason, "All TooltipText indices are missing (Data\\\\Local\\\\%s\\\\ItemTooltipText.bmd)", g_strSelectedML.c_str());
+						}
+					}
+				}
+
+				if (!tooltipOk)
+				{
+					gmAuditRecord(2, idx, s_gmAuditLogMissingTooltips, "Missing tooltip: item=%d reason=%s", idx, reason);
+				}
+			}
+#endif // PACK_FILE_DECRYPT_H
+		}
+
+		s_gmAuditScanIndex = end;
+		if (s_gmAuditScanIndex >= s_gmAuditScanTotal)
+			s_gmAuditScanActive = false;
+	}
 }
 
 void SEASON3B::CGFxEffectHandle::RenderButtons()
@@ -1201,12 +1395,6 @@ bool SEASON3B::CGFxEffectHandle::runtime_render_NoGlow(int modelType, BMD* pMode
 	bool is_rendered = false;
 	int itemindex = g_CMonkSystem.EqualItemModelType(modelType);
 
-	/*if (m_bEditEnchant && itemindex == selectedItem)
-	{
-		is_rendered = true;
-	}
-	else
-	{*/
 	const std::vector<EnchantEffect>& effects = GetEnchantEffects(itemindex);
 
 	if (!effects.empty())
@@ -1222,7 +1410,6 @@ bool SEASON3B::CGFxEffectHandle::runtime_render_NoGlow(int modelType, BMD* pMode
 			}
 		}
 	}
-	//}
 	return is_rendered;
 }
 

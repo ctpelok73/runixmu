@@ -104,10 +104,8 @@ namespace SEASON3B
 		BOOL			m_bEditEnchant;
 		ComboBoxGird comboBoxItems;
 		ComboBoxGird comboBoxGroup;
-		//GirdListBox EditEnchantList;
 		EnchantEffect	m_bSettings;
 		type_map_Enchant mapeEnchant;
-		//std::vector<EnchantEffect> EditEnchant;
 	public:
 		CGFxEffectHandle();
 		virtual ~CGFxEffectHandle();
