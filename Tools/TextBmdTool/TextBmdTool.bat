@@ -3,6 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 set "TOOL_DIR=%~dp0"
 set "TOOL_EXE=%TOOL_DIR%TextBmdTool.exe"
+set "TOOL_EXE_BUILD=%TOOL_DIR%TextBmdTool.build.exe"
 set "NO_PAUSE="
 if /I "%~1"=="--nopause" (
   set "NO_PAUSE=1"
@@ -95,11 +96,18 @@ if errorlevel 1 (
 )
 
 echo [INFO] Building TextBmdTool.exe ...
-cl /nologo /EHsc /std:c++17 /O2 /MT TextBmdTool.cpp /FeTextBmdTool.exe /link /SUBSYSTEM:WINDOWS
+cl /nologo /EHsc /std:c++17 /O2 /MT TextBmdTool.cpp /FeTextBmdTool.build.exe /link /SUBSYSTEM:WINDOWS
 if errorlevel 1 goto :build_fail
 
+copy /y "TextBmdTool.build.exe" "TextBmdTool.exe" >nul 2>&1
 echo.
-echo [OK] Built: "%TOOL_EXE%"
+if exist "%TOOL_EXE%" (
+  echo [OK] Built: "%TOOL_EXE%"
+) else (
+  echo [OK] Built: "%TOOL_EXE_BUILD%"
+  echo [WARN] TextBmdTool.exe is probably running (file is locked).
+  echo        Close the program and run build again to replace it.
+)
 echo.
 popd >nul
 if not defined NO_PAUSE pause

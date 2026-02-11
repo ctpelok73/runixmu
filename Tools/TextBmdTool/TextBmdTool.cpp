@@ -17,7 +17,10 @@
 #pragma comment(lib, "User32.lib")
 #pragma comment(lib, "Shell32.lib")
 #pragma comment(lib, "Ole32.lib")
+#pragma comment(lib, "Comdlg32.lib")
+#pragma comment(lib, "Gdi32.lib")
 
+#include <commdlg.h>
 #include <shellapi.h>
 #include <shlobj.h>
 
@@ -37,9 +40,54 @@ static std::wstring ToWideFromCodepage(const std::string& bytes, UINT codepage) 
 	return wide;
 }
 
+static bool IsValidUtf8(std::string_view s) {
+	size_t i = 0;
+	while (i < s.size()) {
+		unsigned char c = static_cast<unsigned char>(s[i]);
+		if (c <= 0x7F) {
+			++i;
+			continue;
+		}
+		if (c >= 0xC2 && c <= 0xDF) {
+			if (i + 1 >= s.size()) return false;
+			unsigned char c1 = static_cast<unsigned char>(s[i + 1]);
+			if ((c1 & 0xC0) != 0x80) return false;
+			i += 2;
+			continue;
+		}
+		if (c >= 0xE0 && c <= 0xEF) {
+			if (i + 2 >= s.size()) return false;
+			unsigned char c1 = static_cast<unsigned char>(s[i + 1]);
+			unsigned char c2 = static_cast<unsigned char>(s[i + 2]);
+			if ((c1 & 0xC0) != 0x80 || (c2 & 0xC0) != 0x80) return false;
+			if (c == 0xE0 && c1 < 0xA0) return false;
+			if (c == 0xED && c1 >= 0xA0) return false;
+			i += 3;
+			continue;
+		}
+		if (c >= 0xF0 && c <= 0xF4) {
+			if (i + 3 >= s.size()) return false;
+			unsigned char c1 = static_cast<unsigned char>(s[i + 1]);
+			unsigned char c2 = static_cast<unsigned char>(s[i + 2]);
+			unsigned char c3 = static_cast<unsigned char>(s[i + 3]);
+			if ((c1 & 0xC0) != 0x80 || (c2 & 0xC0) != 0x80 || (c3 & 0xC0) != 0x80) return false;
+			if (c == 0xF0 && c1 < 0x90) return false;
+			if (c == 0xF4 && c1 > 0x8F) return false;
+			i += 4;
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
 static std::wstring BytesToWideBestEffort(const std::string& bytes, UINT codepage) {
 	if (bytes.empty()) return std::wstring();
 	{
+		if (IsValidUtf8(bytes)) {
+			std::wstring wide = ToWideFromCodepage(bytes, CP_UTF8);
+			if (!wide.empty()) return wide;
+		}
 		std::wstring wide = ToWideFromCodepage(bytes, codepage);
 		if (!wide.empty()) return wide;
 	}
@@ -485,107 +533,542 @@ static bool ImportOneMerge(const std::filesystem::path& inputTsv, UINT cp, const
 	return SaveBmdTextMap(outputBmd, merged, cp);
 }
 
+static std::optional<std::filesystem::path> PickOpenBmdFile(const std::filesystem::path& initialDir) {
+	wchar_t fileBuf[MAX_PATH]{};
+
+	OPENFILENAMEW ofn{};
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = nullptr;
+	ofn.lpstrFilter = L"BMD files (*.bmd)\0*.bmd\0All files (*.*)\0*.*\0";
+	ofn.lpstrFile = fileBuf;
+	ofn.nMaxFile = MAX_PATH;
+	std::wstring initial = initialDir.wstring();
+	ofn.lpstrInitialDir = initial.empty() ? nullptr : initial.c_str();
+	ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+	if (!GetOpenFileNameW(&ofn)) return std::nullopt;
+	return std::filesystem::path(fileBuf);
+}
+
+static std::filesystem::path MakeNewBmdPath(const std::filesystem::path& inputBmd) {
+	std::filesystem::path out = inputBmd;
+	auto stem = inputBmd.stem().wstring();
+	auto ext = inputBmd.extension().wstring();
+	out.replace_filename(stem + L".new" + ext);
+	return out;
+}
+
+struct EditorCtx {
+	HWND hwnd = nullptr;
+	HWND list = nullptr;
+	HWND edit = nullptr;
+	HWND btnOpen = nullptr;
+	HWND btnSave = nullptr;
+	HWND btnTranslate = nullptr;
+	HWND label = nullptr;
+	HWND labelCp = nullptr;
+	HWND comboCp = nullptr;
+	HWND labelSl = nullptr;
+	HWND comboSl = nullptr;
+	HWND labelTl = nullptr;
+	HWND comboTl = nullptr;
+	HFONT font = nullptr;
+	UINT cp = 1251;
+	std::filesystem::path inputPath;
+	TextMap mapUtf8;
+	std::vector<uint32_t> keys;
+	std::optional<uint32_t> currentKey;
+};
+
+struct LangItem {
+	const wchar_t* label;
+	const wchar_t* code;
+};
+
+static const LangItem kLangs[] = {
+	{L"Auto (auto)", L"auto"},
+	{L"Русский (ru)", L"ru"},
+	{L"English (en)", L"en"},
+	{L"Tiếng Việt (vi)", L"vi"},
+	{L"Deutsch (de)", L"de"},
+	{L"Français (fr)", L"fr"},
+	{L"Español (es)", L"es"},
+	{L"Italiano (it)", L"it"},
+	{L"Português (pt)", L"pt"},
+	{L"Polski (pl)", L"pl"},
+	{L"Türkçe (tr)", L"tr"},
+	{L"ไทย (th)", L"th"},
+	{L"中文(简体) (zh-CN)", L"zh-CN"},
+	{L"日本語 (ja)", L"ja"},
+	{L"한국어 (ko)", L"ko"},
+};
+
+static void FillLangCombo(HWND combo, bool includeAuto, const wchar_t* defaultCode) {
+	SendMessageW(combo, CB_RESETCONTENT, 0, 0);
+	int defaultIndex = 0;
+	int visualIndex = 0;
+	for (const auto& li : kLangs) {
+		if (!includeAuto && wcscmp(li.code, L"auto") == 0) continue;
+		int idx = static_cast<int>(SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(li.label)));
+		SendMessageW(combo, CB_SETITEMDATA, idx, reinterpret_cast<LPARAM>(li.code));
+		if (defaultCode && wcscmp(li.code, defaultCode) == 0) defaultIndex = visualIndex;
+		++visualIndex;
+	}
+	SendMessageW(combo, CB_SETCURSEL, defaultIndex, 0);
+}
+
+static const wchar_t* GetSelectedLangCode(HWND combo, const wchar_t* fallback) {
+	int sel = static_cast<int>(SendMessageW(combo, CB_GETCURSEL, 0, 0));
+	if (sel == CB_ERR) return fallback;
+	auto data = SendMessageW(combo, CB_GETITEMDATA, sel, 0);
+	if (data == CB_ERR) return fallback;
+	return reinterpret_cast<const wchar_t*>(data);
+}
+
+static std::wstring CpToLabel(UINT cp) {
+	switch (cp) {
+	case 1251: return L"1251";
+	case 65001: return L"65001";
+	case 1252: return L"1252";
+	default: break;
+	}
+	return std::to_wstring(cp);
+}
+
+static void SetWindowTitle(EditorCtx& ctx) {
+	std::wstring title = L"TextBmdTool";
+	if (!ctx.inputPath.empty()) {
+		title += L" - ";
+		title += ctx.inputPath.filename().wstring();
+		title += L" (cp ";
+		title += CpToLabel(ctx.cp);
+		title += L")";
+	}
+	SetWindowTextW(ctx.hwnd, title.c_str());
+}
+
+static bool CommitCurrentEdit(EditorCtx& ctx) {
+	if (!ctx.currentKey.has_value()) return true;
+	if (!IsWindow(ctx.edit)) return true;
+
+	int len = GetWindowTextLengthW(ctx.edit);
+	if (len < 0) return false;
+	std::wstring wide(static_cast<size_t>(len) + 1, L'\0');
+	if (len > 0) {
+		GetWindowTextW(ctx.edit, wide.data(), len + 1);
+	}
+	if (!wide.empty() && wide.back() == L'\0') wide.pop_back();
+	std::string utf8 = WideToUtf8(wide);
+	ctx.mapUtf8[*ctx.currentKey] = utf8;
+	return true;
+}
+
+static std::wstring GetEditText(EditorCtx& ctx) {
+	if (!IsWindow(ctx.edit)) return std::wstring();
+	int len = GetWindowTextLengthW(ctx.edit);
+	if (len <= 0) return std::wstring();
+	std::wstring wide(static_cast<size_t>(len) + 1, L'\0');
+	GetWindowTextW(ctx.edit, wide.data(), len + 1);
+	if (!wide.empty() && wide.back() == L'\0') wide.pop_back();
+	return wide;
+}
+
+static void LoadKeyIntoEdit(EditorCtx& ctx, uint32_t key) {
+	auto it = ctx.mapUtf8.find(key);
+	std::wstring wide;
+	if (it != ctx.mapUtf8.end()) {
+		wide = Utf8ToWide(it->second);
+	}
+	SetWindowTextW(ctx.edit, wide.c_str());
+	ctx.currentKey = key;
+}
+
+static bool LoadBmdIntoUi(EditorCtx& ctx, const std::filesystem::path& bmdPath) {
+	auto mapOpt = LoadBmdTextMap(bmdPath, ctx.cp);
+	if (!mapOpt) return false;
+
+	ctx.inputPath = bmdPath;
+	ctx.mapUtf8 = std::move(*mapOpt);
+	ctx.keys.clear();
+	ctx.keys.reserve(ctx.mapUtf8.size());
+	for (const auto& [k, _] : ctx.mapUtf8) ctx.keys.push_back(k);
+	std::sort(ctx.keys.begin(), ctx.keys.end());
+
+	SendMessageW(ctx.list, LB_RESETCONTENT, 0, 0);
+	for (uint32_t k : ctx.keys) {
+		wchar_t buf[64]{};
+		wsprintfW(buf, L"%u", static_cast<unsigned>(k));
+		int idx = static_cast<int>(SendMessageW(ctx.list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(buf)));
+		SendMessageW(ctx.list, LB_SETITEMDATA, idx, static_cast<LPARAM>(k));
+	}
+
+	if (!ctx.keys.empty()) {
+		SendMessageW(ctx.list, LB_SETCURSEL, 0, 0);
+		LoadKeyIntoEdit(ctx, ctx.keys[0]);
+	} else {
+		SetWindowTextW(ctx.edit, L"");
+		ctx.currentKey.reset();
+	}
+
+	if (IsWindow(ctx.label)) {
+		std::wstring label = L"File: " + ctx.inputPath.wstring();
+		SetWindowTextW(ctx.label, label.c_str());
+	}
+	EnableWindow(ctx.btnSave, TRUE);
+	SetWindowTitle(ctx);
+	return true;
+}
+
+static std::string UrlEncodeUtf8(const std::string& s) {
+	static const char* hex = "0123456789ABCDEF";
+	std::string out;
+	out.reserve(s.size() * 3);
+	for (unsigned char c : s) {
+		bool unreserved = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' ||
+			c == '~';
+		if (unreserved) {
+			out.push_back(static_cast<char>(c));
+		} else {
+			out.push_back('%');
+			out.push_back(hex[(c >> 4) & 0xF]);
+			out.push_back(hex[c & 0xF]);
+		}
+	}
+	return out;
+}
+
+static void OpenTranslate(EditorCtx& ctx) {
+	std::wstring text = GetEditText(ctx);
+	if (text.empty()) {
+		ShowErrorBox(L"Строка пустая.");
+		return;
+	}
+
+	const wchar_t* sl = GetSelectedLangCode(ctx.comboSl, L"auto");
+	const wchar_t* tl = GetSelectedLangCode(ctx.comboTl, L"ru");
+
+	std::string url = "https://translate.google.com/?sl=";
+	url += UrlEncodeUtf8(WideToUtf8(std::wstring(sl)));
+	url += "&tl=";
+	url += UrlEncodeUtf8(WideToUtf8(std::wstring(tl)));
+	url += "&text=";
+	url += UrlEncodeUtf8(WideToUtf8(text));
+	url += "&op=translate";
+
+	std::wstring wurl = Utf8ToWide(url);
+	auto ret = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", wurl.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+	if (ret <= 32) {
+		ShowErrorBox(L"Не удалось открыть браузер.");
+	}
+}
+
+static void ApplyUiFont(EditorCtx& ctx) {
+	NONCLIENTMETRICSW ncm{};
+	ncm.cbSize = sizeof(ncm);
+	if (!SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0)) return;
+	if (ctx.font) DeleteObject(ctx.font);
+	ctx.font = CreateFontIndirectW(&ncm.lfMessageFont);
+	if (!ctx.font) return;
+
+	const HWND controls[] = {ctx.btnOpen, ctx.btnSave, ctx.btnTranslate, ctx.label, ctx.labelSl, ctx.comboSl, ctx.labelTl, ctx.comboTl, ctx.labelCp,
+		ctx.comboCp, ctx.list, ctx.edit};
+	for (HWND h : controls) {
+		if (IsWindow(h)) SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(ctx.font), TRUE);
+	}
+}
+
+static int CpIndexFromValue(UINT cp) {
+	switch (cp) {
+	case 1251: return 0;
+	case 65001: return 1;
+	case 1252: return 2;
+	default: return 0;
+	}
+}
+
+static UINT CpValueFromIndex(int idx) {
+	switch (idx) {
+	case 0: return 1251;
+	case 1: return 65001;
+	case 2: return 1252;
+	default: return 1251;
+	}
+}
+
+static UINT DetectBmdCodepageLikely(const std::filesystem::path& bmdPath, UINT fallbackCp) {
+	std::ifstream in(bmdPath, std::ios::binary);
+	if (!in.is_open()) return fallbackCp;
+
+	GlobalTextHeader header{};
+	if (!ReadExact(in, &header, sizeof(header))) return fallbackCp;
+	if (header.signature != 0x5447) return fallbackCp;
+
+	uint32_t checked = 0;
+	uint32_t utf8Likely = 0;
+	const uint32_t maxCheck = 200;
+	for (uint32_t i = 0; i < header.count && checked < maxCheck; ++i) {
+		GlobalTextStringHeader sh{};
+		if (!ReadExact(in, &sh, sizeof(sh))) break;
+		std::vector<uint8_t> buf;
+		buf.resize(static_cast<size_t>(sh.sizeOfString));
+		if (sh.sizeOfString > 0) {
+			if (!ReadExact(in, buf.data(), buf.size())) break;
+			BuxConvert(buf.data(), buf.size());
+		}
+		std::string bytes(reinterpret_cast<const char*>(buf.data()), buf.size());
+		bool hasNonAscii = false;
+		for (unsigned char ch : bytes) {
+			if (ch >= 0x80) {
+				hasNonAscii = true;
+				break;
+			}
+		}
+		if (hasNonAscii && IsValidUtf8(bytes)) ++utf8Likely;
+		++checked;
+	}
+
+	if (checked >= 8 && utf8Likely * 3 >= checked) return 65001;
+	return fallbackCp;
+}
+
+static void DoOpen(EditorCtx& ctx) {
+	auto picked = PickOpenBmdFile(ctx.inputPath.empty() ? GetExeDir() : ctx.inputPath.parent_path());
+	if (!picked) return;
+	UINT detected = DetectBmdCodepageLikely(*picked, ctx.cp);
+	if (detected != ctx.cp) {
+		ctx.cp = detected;
+		SendMessageW(ctx.comboCp, CB_SETCURSEL, CpIndexFromValue(ctx.cp), 0);
+		SetWindowTitle(ctx);
+	}
+	if (!LoadBmdIntoUi(ctx, *picked)) {
+		ShowErrorBox(L"Не удалось прочитать BMD.");
+	}
+}
+
+static void DoSaveNew(EditorCtx& ctx) {
+	if (ctx.inputPath.empty()) return;
+	if (!CommitCurrentEdit(ctx)) {
+		ShowErrorBox(L"Ошибка чтения текста из поля.");
+		return;
+	}
+	auto outPath = MakeNewBmdPath(ctx.inputPath);
+	if (!SaveBmdTextMap(outPath, ctx.mapUtf8, ctx.cp)) {
+		ShowErrorBox(L"Не удалось сохранить новый BMD.");
+		return;
+	}
+	ShowInfoBox(L"Сохранено:\n" + outPath.wstring());
+}
+
+static LRESULT CALLBACK EditorWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+	EditorCtx* ctx = reinterpret_cast<EditorCtx*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+	switch (msg) {
+	case WM_CREATE: {
+		auto* created = new EditorCtx();
+		created->hwnd = hwnd;
+		SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(created));
+		ctx = created;
+
+		ctx->btnOpen = CreateWindowExW(0, L"BUTTON", L"Open BMD", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 100, 24, hwnd,
+			reinterpret_cast<HMENU>(1001), GetModuleHandleW(nullptr), nullptr);
+		ctx->btnSave = CreateWindowExW(0, L"BUTTON", L"Save New", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 100, 24, hwnd,
+			reinterpret_cast<HMENU>(1002), GetModuleHandleW(nullptr), nullptr);
+		EnableWindow(ctx->btnSave, FALSE);
+
+		ctx->btnTranslate = CreateWindowExW(0, L"BUTTON", L"Translate", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 100, 24, hwnd,
+			reinterpret_cast<HMENU>(1008), GetModuleHandleW(nullptr), nullptr);
+
+		ctx->label = CreateWindowExW(0, L"STATIC", L"File: (none)", WS_CHILD | WS_VISIBLE, 0, 0, 100, 18, hwnd,
+			reinterpret_cast<HMENU>(1003), GetModuleHandleW(nullptr), nullptr);
+
+		ctx->labelSl = CreateWindowExW(0, L"STATIC", L"From:", WS_CHILD | WS_VISIBLE, 0, 0, 100, 18, hwnd,
+			reinterpret_cast<HMENU>(1009), GetModuleHandleW(nullptr), nullptr);
+		ctx->comboSl = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST, 0, 0, 160, 240, hwnd,
+			reinterpret_cast<HMENU>(1010), GetModuleHandleW(nullptr), nullptr);
+		ctx->labelTl = CreateWindowExW(0, L"STATIC", L"To:", WS_CHILD | WS_VISIBLE, 0, 0, 100, 18, hwnd,
+			reinterpret_cast<HMENU>(1011), GetModuleHandleW(nullptr), nullptr);
+		ctx->comboTl = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST, 0, 0, 160, 240, hwnd,
+			reinterpret_cast<HMENU>(1012), GetModuleHandleW(nullptr), nullptr);
+		FillLangCombo(ctx->comboSl, true, L"auto");
+		FillLangCombo(ctx->comboTl, false, L"ru");
+
+		ctx->labelCp = CreateWindowExW(0, L"STATIC", L"Codepage:", WS_CHILD | WS_VISIBLE, 0, 0, 100, 18, hwnd,
+			reinterpret_cast<HMENU>(1006), GetModuleHandleW(nullptr), nullptr);
+		ctx->comboCp = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST, 0, 0, 180, 200, hwnd,
+			reinterpret_cast<HMENU>(1007), GetModuleHandleW(nullptr), nullptr);
+		SendMessageW(ctx->comboCp, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"1251 (Cyrillic)"));
+		SendMessageW(ctx->comboCp, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"65001 (UTF-8)"));
+		SendMessageW(ctx->comboCp, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"1252 (Latin)"));
+		SendMessageW(ctx->comboCp, CB_SETCURSEL, CpIndexFromValue(ctx->cp), 0);
+
+		ctx->list = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY, 0, 0, 200, 400,
+			hwnd, reinterpret_cast<HMENU>(1004), GetModuleHandleW(nullptr), nullptr);
+
+		ctx->edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+			WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN, 0, 0, 400, 400, hwnd,
+			reinterpret_cast<HMENU>(1005), GetModuleHandleW(nullptr), nullptr);
+
+		ApplyUiFont(*ctx);
+		SetWindowTitle(*ctx);
+
+		const auto exeDir = GetExeDir();
+		const auto autoText = exeDir / L"Text.bmd";
+		const auto autoGlobal = exeDir / L"GlobalText.bmd";
+		if (std::filesystem::exists(autoText)) {
+			ctx->cp = DetectBmdCodepageLikely(autoText, ctx->cp);
+			SendMessageW(ctx->comboCp, CB_SETCURSEL, CpIndexFromValue(ctx->cp), 0);
+			SetWindowTitle(*ctx);
+			LoadBmdIntoUi(*ctx, autoText);
+		} else if (std::filesystem::exists(autoGlobal)) {
+			ctx->cp = DetectBmdCodepageLikely(autoGlobal, ctx->cp);
+			SendMessageW(ctx->comboCp, CB_SETCURSEL, CpIndexFromValue(ctx->cp), 0);
+			SetWindowTitle(*ctx);
+			LoadBmdIntoUi(*ctx, autoGlobal);
+		} else {
+			DoOpen(*ctx);
+		}
+		return 0;
+	}
+	case WM_SIZE: {
+		if (!ctx) break;
+		int w = LOWORD(lParam);
+		int h = HIWORD(lParam);
+		int pad = 8;
+		int top = pad;
+
+		int btnH = 24;
+		int labelH = 18;
+		int btnW = 110;
+		int comboH = 240;
+
+		MoveWindow(ctx->btnOpen, pad, top, btnW, btnH, TRUE);
+		MoveWindow(ctx->btnSave, pad + btnW + pad, top, btnW, btnH, TRUE);
+		MoveWindow(ctx->btnTranslate, pad + (btnW + pad) * 2, top, btnW, btnH, TRUE);
+
+		int slLabelW = 40;
+		int slW = 160;
+		int tlLabelW = 25;
+		int tlW = 160;
+		int cpLabelW = 70;
+		int cpW = 170;
+
+		int minRightX = pad + (btnW + pad) * 3 + pad;
+		int totalRightW = slLabelW + pad + slW + pad + tlLabelW + pad + tlW + pad + cpLabelW + pad + cpW;
+		int startX = w - pad - totalRightW;
+		if (startX < minRightX) startX = minRightX;
+
+		int x = startX;
+		MoveWindow(ctx->labelSl, x, top + 3, slLabelW, labelH, TRUE);
+		x += slLabelW + pad;
+		MoveWindow(ctx->comboSl, x, top, slW, comboH, TRUE);
+		x += slW + pad;
+		MoveWindow(ctx->labelTl, x, top + 3, tlLabelW, labelH, TRUE);
+		x += tlLabelW + pad;
+		MoveWindow(ctx->comboTl, x, top, tlW, comboH, TRUE);
+		x += tlW + pad;
+		MoveWindow(ctx->labelCp, x, top + 3, cpLabelW, labelH, TRUE);
+		x += cpLabelW + pad;
+		MoveWindow(ctx->comboCp, x, top, cpW, comboH, TRUE);
+		top += btnH + pad;
+
+		MoveWindow(ctx->label, pad, top, w - 2 * pad, labelH, TRUE);
+		top += labelH + pad;
+
+		int listW = 140;
+		int contentH = h - top - pad;
+		if (contentH < 0) contentH = 0;
+		MoveWindow(ctx->list, pad, top, listW, contentH, TRUE);
+		int editW = w - (pad + listW + 2 * pad);
+		if (editW < 0) editW = 0;
+		MoveWindow(ctx->edit, pad + listW + pad, top, editW, contentH, TRUE);
+		return 0;
+	}
+	case WM_COMMAND: {
+		if (!ctx) break;
+		WORD id = LOWORD(wParam);
+		WORD code = HIWORD(wParam);
+
+		if (id == 1001 && code == BN_CLICKED) {
+			CommitCurrentEdit(*ctx);
+			DoOpen(*ctx);
+			return 0;
+		}
+		if (id == 1002 && code == BN_CLICKED) {
+			DoSaveNew(*ctx);
+			return 0;
+		}
+		if (id == 1008 && code == BN_CLICKED) {
+			OpenTranslate(*ctx);
+			return 0;
+		}
+		if (id == 1007 && code == CBN_SELCHANGE) {
+			int sel = static_cast<int>(SendMessageW(ctx->comboCp, CB_GETCURSEL, 0, 0));
+			if (sel == CB_ERR) return 0;
+			UINT newCp = CpValueFromIndex(sel);
+			if (newCp == ctx->cp) return 0;
+
+			UINT oldCp = ctx->cp;
+			if (!ctx->inputPath.empty()) {
+				int ans = MessageBoxW(hwnd, L"Сменить кодировку и перечитать файл?\nНесохраненные изменения будут потеряны.", L"TextBmdTool",
+					MB_YESNO | MB_ICONQUESTION);
+				if (ans != IDYES) {
+					SendMessageW(ctx->comboCp, CB_SETCURSEL, CpIndexFromValue(oldCp), 0);
+					return 0;
+				}
+			}
+
+			ctx->cp = newCp;
+			SetWindowTitle(*ctx);
+			if (!ctx->inputPath.empty()) {
+				if (!LoadBmdIntoUi(*ctx, ctx->inputPath)) {
+					ShowErrorBox(L"Не удалось перечитать BMD с выбранной кодировкой.");
+				}
+			}
+			return 0;
+		}
+		if (id == 1004 && code == LBN_SELCHANGE) {
+			int sel = static_cast<int>(SendMessageW(ctx->list, LB_GETCURSEL, 0, 0));
+			if (sel != LB_ERR) {
+				CommitCurrentEdit(*ctx);
+				auto key = static_cast<uint32_t>(SendMessageW(ctx->list, LB_GETITEMDATA, sel, 0));
+				LoadKeyIntoEdit(*ctx, key);
+			}
+			return 0;
+		}
+		break;
+	}
+	case WM_DESTROY:
+		PostQuitMessage(0);
+		return 0;
+	case WM_NCDESTROY:
+		if (ctx) {
+			SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+			if (ctx->font) DeleteObject(ctx->font);
+			delete ctx;
+		}
+		return 0;
+	}
+	return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
 static int RunGui() {
-	const std::filesystem::path exeDir = GetExeDir();
-	const std::filesystem::path outDir = exeDir;
-	const UINT cp = 1251;
+	WNDCLASSW wc{};
+	wc.lpfnWndProc = EditorWndProc;
+	wc.hInstance = GetModuleHandleW(nullptr);
+	wc.lpszClassName = L"TextBmdToolEditorWnd";
+	wc.hCursor = LoadCursorW(nullptr, reinterpret_cast<LPCWSTR>(IDC_ARROW));
+	wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+	RegisterClassW(&wc);
 
-	int choice = MessageBoxW(
-		nullptr,
-		L"Да:  Export (Text.bmd + GlobalText.bmd -> out\\*.tsv)\n"
-		L"Нет: Import (out\\*.tsv -> out\\*.new.bmd, merge поверх base)\n"
-		L"Отмена: Выход\n\n"
-		L"По умолчанию берется папка рядом с программой:\n"
-		L"  Text.bmd / GlobalText.bmd / Text.tsv / GlobalText.tsv\n"
-		L"Если рядом нет BMD, тогда попросит выбрать папку клиента.\n"
-		L"Язык определится автоматически (приоритет Ru). Кодировка: 1251.",
-		L"TextBmdTool",
-		MB_YESNOCANCEL | MB_ICONQUESTION);
+	HWND hwnd = CreateWindowExW(0, wc.lpszClassName, L"TextBmdTool", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 900, 600,
+		nullptr, nullptr, wc.hInstance, nullptr);
+	if (!hwnd) return 1;
 
-	if (choice == IDCANCEL) return 0;
-
-	const auto localTextBmd = exeDir / L"Text.bmd";
-	const auto localGlobalBmd = exeDir / L"GlobalText.bmd";
-	const bool hasLocalTextBmd = std::filesystem::exists(localTextBmd);
-	const bool hasLocalGlobalBmd = std::filesystem::exists(localGlobalBmd);
-
-	std::optional<std::filesystem::path> resolvedDataDir;
-	std::optional<std::optional<std::wstring>> langFolder;
-	if (!hasLocalTextBmd && !hasLocalGlobalBmd) {
-		auto picked = PickFolder(L"Выбери папку Data клиента (или корень клиента)");
-		if (!picked) return 0;
-
-		auto resolved = ResolveDataDir(*picked);
-		if (resolved.empty()) {
-			ShowErrorBox(L"Не удалось найти папку Data.\n\nВыбери папку, в которой есть:\n  Data\\Local\\...\nили саму папку Data (где есть Local).");
-			return 1;
-		}
-		resolvedDataDir = resolved;
-
-		auto detected = DetectLangFolder(*resolvedDataDir);
-		if (!detected) {
-			ShowErrorBox(L"Не удалось найти файлы:\n  Local\\<lang>\\Text.bmd\n  Local\\<lang>\\GlobalText.bmd\n\nПроверь структуру папок и язык.");
-			return 1;
-		}
-		langFolder = detected;
+	MSG msg;
+	while (GetMessageW(&msg, nullptr, 0, 0)) {
+		TranslateMessage(&msg);
+		DispatchMessageW(&msg);
 	}
-
-	std::wstring err;
-	bool ok = false;
-	if (choice == IDYES) {
-		bool okAny = false;
-		if (hasLocalTextBmd) {
-			okAny = true;
-			ok = ExportOne(localTextBmd, cp, outDir / L"Text.tsv");
-			if (!ok) err = L"Export failed:\n" + localTextBmd.wstring();
-		}
-		if (ok && hasLocalGlobalBmd) {
-			okAny = true;
-			ok = ExportOne(localGlobalBmd, cp, outDir / L"GlobalText.tsv");
-			if (!ok) err = L"Export failed:\n" + localGlobalBmd.wstring();
-		}
-		if (!okAny) {
-			ok = ExportBoth(*resolvedDataDir, *langFolder, cp, outDir);
-			if (!ok) {
-				const auto textPath = MakeTextPath(*resolvedDataDir, *langFolder).wstring();
-				const auto globalPath = MakeGlobalTextPath(*resolvedDataDir, *langFolder).wstring();
-				err = L"Export failed.\n\nExpected:\n" + textPath + L"\n" + globalPath;
-			}
-		}
-	} else if (choice == IDNO) {
-		bool okAny = false;
-		const auto localTextTsv = exeDir / L"Text.tsv";
-		const auto localGlobalTsv = exeDir / L"GlobalText.tsv";
-		if (hasLocalTextBmd && std::filesystem::exists(localTextTsv)) {
-			okAny = true;
-			ok = ImportOneMerge(localTextTsv, cp, localTextBmd, outDir / L"Text.new.bmd");
-			if (!ok) err = L"Import failed:\n" + localTextTsv.wstring();
-		}
-		if (ok && hasLocalGlobalBmd && std::filesystem::exists(localGlobalTsv)) {
-			okAny = true;
-			ok = ImportOneMerge(localGlobalTsv, cp, localGlobalBmd, outDir / L"GlobalText.new.bmd");
-			if (!ok) err = L"Import failed:\n" + localGlobalTsv.wstring();
-		}
-		if (!okAny) {
-			ok = ImportBothMerge(*resolvedDataDir, *langFolder, cp, outDir);
-			if (!ok) {
-				err = L"Import failed.\n\nExpected:\n" + (outDir.wstring() + L"\\Text.tsv\n" + outDir.wstring() + L"\\GlobalText.tsv");
-			}
-		}
-	}
-
-	if (!ok) {
-		ShowErrorBox(err.empty() ? L"Operation failed." : err);
-		return 1;
-	}
-
-	std::wstring info = L"Done.\n\nFolder:\n" + exeDir.wstring();
-	if (resolvedDataDir && langFolder) {
-		std::wstring usedLang = (*langFolder)->empty() ? L"(no lang folder)" : **langFolder;
-		info += L"\n\nData:\n" + resolvedDataDir->wstring() + L"\nLang:\n" + usedLang;
-	}
-	ShowInfoBox(info);
-	return 0;
+	return static_cast<int>(msg.wParam);
 }
 
 static int RunCli(int argc, wchar_t** argv) {
