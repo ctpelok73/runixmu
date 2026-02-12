@@ -10,6 +10,7 @@
 #include "ChaosBox.h"
 #include "ChaosCastle.h"
 #include "CommandManager.h"
+#include "GameMaster.h"
 #include "CustomBuyVip.h"
 #include "CustomCommandDescription.h"
 #include "CustomEventTime.h"
@@ -53,6 +54,7 @@
 #include "MiningSystem.h"
 #include "Move.h"
 #include "MuRummy.h"
+#include "MonsterManager.h"
 #include "MuunSystem.h"
 #include "Notice.h"
 #include "NpcTalk.h"
@@ -75,6 +77,143 @@
 #include "GMHolyItem.h"
 #include "ChatManager.h"
 #include "ShopManager.h"
+
+static void GCGMMonsterDbSend(int aIndex, BYTE flags)
+{
+	LPOBJ lpObj = &gObj[aIndex];
+
+	if (lpObj->Type != OBJECT_USER)
+	{
+		return;
+	}
+
+	if (gGameMaster.CheckGameMasterLevel(lpObj, 1) == 0)
+	{
+		return;
+	}
+
+	WORD total = 0;
+	for (int i = 0; i < MAX_MONSTER_INFO; ++i)
+	{
+		if (gMonsterManager.GetInfo(i) != 0)
+		{
+			++total;
+		}
+	}
+
+	const int maxPacketSize = 4096;
+	const int dataHeaderSize = sizeof(PMSG_GM_MONSTER_DB_DATA) - sizeof(GM_MONSTER_INFO_NET);
+	const WORD maxPerChunk = (WORD)((maxPacketSize - dataHeaderSize) / (int)sizeof(GM_MONSTER_INFO_NET));
+	const WORD chunkSize = (maxPerChunk > 0) ? ((maxPerChunk > 25) ? 25 : maxPerChunk) : 1;
+
+	PMSG_GM_MONSTER_DB_BEGIN beginMsg;
+	beginMsg.header.set(0xFA, 0x01, sizeof(beginMsg));
+	beginMsg.total = total;
+	beginMsg.chunkSize = chunkSize;
+	DataSend(aIndex, (BYTE*)&beginMsg, beginMsg.header.size);
+
+	BYTE sendBuf[maxPacketSize];
+	PMSG_GM_MONSTER_DB_DATA* dataMsg = (PMSG_GM_MONSTER_DB_DATA*)sendBuf;
+
+	WORD row = 0;
+	WORD chunkRowStart = 0;
+	WORD chunkCount = 0;
+
+	for (int i = 0; i < MAX_MONSTER_INFO; ++i)
+	{
+		MONSTER_INFO* mi = gMonsterManager.GetInfo(i);
+		if (mi == 0)
+		{
+			continue;
+		}
+
+		GM_MONSTER_INFO_NET out = {};
+		out.Index = mi->Index;
+		out.Rate = mi->Rate;
+		memcpy(out.Name, mi->Name, sizeof(out.Name));
+		out.Level = mi->Level;
+		out.AINumber = mi->AINumber;
+		out.ScriptLife = mi->ScriptLife;
+		out.Life = mi->Life;
+		out.Mana = mi->Mana;
+		out.DamageMin = mi->DamageMin;
+		out.DamageMax = mi->DamageMax;
+		out.Defense = mi->Defense;
+		out.MagicDefense = mi->MagicDefense;
+		out.AttackRate = mi->AttackRate;
+		out.DefenseRate = mi->DefenseRate;
+		out.MoveRange = mi->MoveRange;
+		out.AttackRange = mi->AttackRange;
+		out.AttackType = mi->AttackType;
+		out.ViewRange = mi->ViewRange;
+		out.MoveSpeed = mi->MoveSpeed;
+		out.AttackSpeed = mi->AttackSpeed;
+		out.RegenTime = mi->RegenTime;
+		out.Attribute = mi->Attribute;
+		out.ItemRate = mi->ItemRate;
+		out.MoneyRate = mi->MoneyRate;
+		out.MaxItemLevel = mi->MaxItemLevel;
+		for (int r = 0; r < 7; ++r)
+		{
+			out.Resistance[r] = mi->Resistance[r];
+		}
+		out.MonsterSkill = mi->MonsterSkill;
+#if (GAMESERVER_UPDATE >= 701)
+		out.ElementalAttribute = mi->ElementalAttribute;
+		out.ElementalPattern = mi->ElementalPattern;
+		out.ElementalDefense = mi->ElementalDefense;
+		out.ElementalDamageMin = mi->ElementalDamageMin;
+		out.ElementalDamageMax = mi->ElementalDamageMax;
+		out.ElementalAttackRate = mi->ElementalAttackRate;
+		out.ElementalDefenseRate = mi->ElementalDefenseRate;
+#else
+		out.ElementalAttribute = 0;
+		out.ElementalPattern = 0;
+		out.ElementalDefense = 0;
+		out.ElementalDamageMin = 0;
+		out.ElementalDamageMax = 0;
+		out.ElementalAttackRate = 0;
+		out.ElementalDefenseRate = 0;
+#endif
+
+		if (chunkCount == 0)
+		{
+			chunkRowStart = row;
+		}
+
+		dataMsg->items[chunkCount] = out;
+		++chunkCount;
+		++row;
+
+		if (chunkCount >= chunkSize)
+		{
+			const WORD pktSize = (WORD)(dataHeaderSize + (chunkCount * (WORD)sizeof(GM_MONSTER_INFO_NET)));
+			dataMsg->header.set(0xFA, 0x02, pktSize);
+			dataMsg->start = chunkRowStart;
+			dataMsg->count = chunkCount;
+			DataSend(aIndex, (BYTE*)dataMsg, pktSize);
+			chunkCount = 0;
+		}
+	}
+
+	if (chunkCount > 0)
+	{
+		const WORD pktSize = (WORD)(dataHeaderSize + (chunkCount * (WORD)sizeof(GM_MONSTER_INFO_NET)));
+		dataMsg->header.set(0xFA, 0x02, pktSize);
+		dataMsg->start = chunkRowStart;
+		dataMsg->count = chunkCount;
+		DataSend(aIndex, (BYTE*)dataMsg, pktSize);
+	}
+
+	PMSG_GM_MONSTER_DB_END endMsg;
+	endMsg.header.set(0xFA, 0x03, sizeof(endMsg));
+	DataSend(aIndex, (BYTE*)&endMsg, endMsg.header.size);
+}
+
+static void CGGMMonsterDbRecv(PMSG_GM_MONSTER_DB_REQ* lpMsg, int aIndex)
+{
+	GCGMMonsterDbSend(aIndex, lpMsg ? lpMsg->flags : 0);
+}
 
 
 void ProtocolCore(BYTE head, BYTE* lpMsg, int size, int aIndex, int encrypt, int serial) // OK
@@ -1110,6 +1249,14 @@ void ProtocolCore(BYTE head, BYTE* lpMsg, int size, int aIndex, int encrypt, int
 			break;
 		case 0xF4:
 			gCommandManager.CGGMClearInventoryRecv((PMSG_GM_CLEAR_INVENTORY_RECV*)lpMsg, aIndex);
+			break;
+		}
+		break;
+	case 0xFA:
+		switch (((lpMsg[0] == 0xC1) ? lpMsg[3] : lpMsg[4]))
+		{
+		case 0x00:
+			CGGMMonsterDbRecv((PMSG_GM_MONSTER_DB_REQ*)lpMsg, aIndex);
 			break;
 		}
 		break;

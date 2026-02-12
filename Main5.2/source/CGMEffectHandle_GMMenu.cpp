@@ -1,8 +1,6 @@
 #include "stdafx.h"
-#include "ZzzTexture.h"
 #include "NewUISystem.h"
 #include "CGMEffectHandle.h"
-#include "MonkSystem.h"
 #include "Protocol.h"
 #include "CSItemOption.h"
 #include "CSParts.h"
@@ -181,16 +179,23 @@ extern float g_GMMenuPreviewRotateY;
 
 static int s_gmMenuActiveTab = 0;
 static int s_gmSelectedMonsterIndex = -1;
+static int s_gmSelectedMonsterRow = -1;
+static bool s_gmMonsterDbRequested = false;
 static bool s_gmMonsterPreviewOk = false;
 static int s_gmMonsterPreviewRenderIndex = -1;
 static float s_gmMonsterPreviewScale = 1.0f;
 static int s_gmMonsterPreviewKind = KIND_MONSTER;
+static int s_gmMonsterPreviewAction = -1;
 
 static bool s_gmMonsterScanActive = false;
 static int s_gmMonsterScanIndex = 0;
 static int s_gmMonsterScanTotal = 0;
 static int s_gmMonsterScanBatch = 128;
 static int s_gmMonsterIssuesMissingModel = 0;
+static int s_gmMonsterIssuesCreateFail = 0;
+static int s_gmMonsterIssuesModelNotReady = 0;
+static char s_gmMonsterLastIssue[256] = { 0 };
+static bool s_gmMonsterReportInit = false;
 
 static bool s_gmAuditAutoLog = true;
 static bool s_gmAuditLogMissingModels = true;
@@ -291,11 +296,8 @@ static bool gmCalcObjectSafe(OBJECT* o, bool translate, int select, int extraMon
 	}
 }
 
-static void gmRenderMonsterPreview3D(int monsterIndex, int modelType, int kind, float scale, float rotY, float previewX, float previewY, float previewW, float previewH)
+static void gmRenderMonsterPreview3D(int monsterIndex, float scaleMul, float rotY, float previewX, float previewY, float previewW, float previewH, int actionOverride)
 {
-	if (!gmIsModelReady(modelType))
-		return;
-
 	const float centerX = previewX + (previewW * 0.5f);
 	const float centerY = previewY + (previewH * 0.5f);
 
@@ -331,19 +333,12 @@ static void gmRenderMonsterPreview3D(int monsterIndex, int modelType, int kind, 
 
 	vec3_t direction;
 	vec3_t position;
-	VectorSubtract(target, MousePosition, direction);
-	const float distFactor = (modelType >= MODEL_MONSTER_DUMY_BENGI) ? 0.18f : 0.08f;
-	VectorMA(MousePosition, (float)ScaleMA(distFactor), direction, position);
 
 	static const int s_gmPreviewCharacterKey = 0x6F01;
 
 	DeleteCharacter(s_gmPreviewCharacterKey);
 
-	CHARACTER* c = 0;
-	if (monsterIndex >= 0 && monsterIndex < MAX_MODEL_MONSTER)
-		c = CreateMonster(monsterIndex, 0, 0, s_gmPreviewCharacterKey);
-	if (c == 0)
-		c = CreateCharacter(s_gmPreviewCharacterKey, modelType, 0, 0);
+	CHARACTER* c = CreateMonster(monsterIndex, 0, 0, s_gmPreviewCharacterKey);
 	if (c == 0)
 	{
 		glMatrixMode(GL_MODELVIEW);
@@ -367,11 +362,54 @@ static void gmRenderMonsterPreview3D(int monsterIndex, int modelType, int kind, 
 	}
 
 	OBJECT* o = &c->Object;
+	const int modelType = o->Type;
+	const int kind = o->Kind;
+
+	VectorSubtract(target, MousePosition, direction);
+	const float distFactor = (modelType >= MODEL_MONSTER_DUMY_BENGI) ? 0.18f : 0.08f;
+	VectorMA(MousePosition, (float)ScaleMA(distFactor), direction, position);
+
+	if (!gmIsModelReady(modelType))
+	{
+		if (monsterIndex >= 0 && monsterIndex < MAX_MODEL_MONSTER)
+		{
+			OpenMonsterModel(monsterIndex);
+		}
+		if (kind == KIND_NPC)
+		{
+			OpenNpc(modelType);
+		}
+	}
+
+	if (!gmIsModelReady(modelType))
+	{
+		DeleteCharacter(s_gmPreviewCharacterKey);
+
+		glMatrixMode(GL_MODELVIEW);
+		glPopMatrix();
+		glMatrixMode(GL_PROJECTION);
+		glPopMatrix();
+
+		glPushMatrix();
+		glLoadIdentity();
+		glViewport2(0, 0, WindowWidth, WindowHeight);
+		gluPerspective2(1.f, (float)(WindowWidth) / (float)(WindowHeight), RENDER_ITEMVIEW_NEAR, RENDER_ITEMVIEW_FAR);
+		glPopMatrix();
+		glMatrixMode(GL_MODELVIEW);
+
+		if (!oldScissorEnabled)
+			glDisable(GL_SCISSOR_TEST);
+		else
+			glEnable(GL_SCISSOR_TEST);
+		glScissor(oldScissorBox[0], oldScissorBox[1], oldScissorBox[2], oldScissorBox[3]);
+		return;
+	}
+
 	o->Live = true;
 	o->Visible = true;
-	o->Kind = kind;
-	o->Type = modelType;
-	float renderScale = (scale > 0.0f) ? scale : 1.0f;
+	float baseScale = (o->Scale > 0.0f) ? o->Scale : 1.0f;
+	float mul = (scaleMul > 0.0f) ? scaleMul : 1.0f;
+	float renderScale = baseScale * mul;
 	if (modelType >= MODEL_MONSTER_DUMY_BENGI)
 		renderScale *= 0.01f;
 	o->Scale = renderScale;
@@ -384,6 +422,16 @@ static void gmRenderMonsterPreview3D(int monsterIndex, int modelType, int kind, 
 	Vector(0.0f, 0.0f, 0.0f, o->HeadAngle);
 
 	BMD* pModel = gmClientModels->GetModel(modelType);
+	if (actionOverride >= 0 && pModel && pModel->NumActions > 0)
+	{
+		int act = actionOverride;
+		if (act >= pModel->NumActions)
+			act = pModel->NumActions - 1;
+		if (act < 0)
+			act = 0;
+		o->CurrentAction = act;
+		o->PriorAction = act;
+	}
 	if (pModel && gmCalcObjectSafe(o, true, 0, 0) && pModel->fTransformedSize > 0.0f)
 	{
 		vec3_t camToObj;
@@ -456,6 +504,135 @@ static bool gmStrCaseContains(const char* haystack, const char* needle)
 	}
 
 	return false;
+}
+
+static int gmInferMonsterKind(int Type)
+{
+	int kind = KIND_MONSTER;
+
+	if (Type == 200)
+		kind = KIND_MONSTER;
+	else if (Type >= 260)
+		kind = KIND_MONSTER;
+	else if (Type > 200)
+		kind = KIND_NPC;
+	else if (Type >= 150)
+		kind = KIND_MONSTER;
+	else if (Type > 110)
+		kind = KIND_MONSTER;
+	else if (Type >= 100)
+		kind = KIND_TRAP;
+	else
+		kind = KIND_MONSTER;
+
+	if (Type == 368 || Type == 369 || Type == 370)
+		kind = KIND_NPC;
+
+	if (Type == 367
+		|| Type == 371
+		|| Type == 375
+		|| Type == 376 || Type == 377
+		|| Type == 379
+		|| Type == 380 || Type == 381 || Type == 382
+		|| Type == 383 || Type == 384 || Type == 385
+		|| Type == 406
+		|| Type == 407
+		|| Type == 408
+		|| Type == 414
+		|| Type == 415 || Type == 416 || Type == 417
+		|| Type == 450
+		|| Type == 452 || Type == 453
+		|| Type == 464
+		|| Type == 465
+		|| Type == 467
+		|| Type == 468 || Type == 469 || Type == 470
+		|| Type == 471 || Type == 472 || Type == 473
+		|| Type == 474 || Type == 475
+		|| Type == 478
+		|| Type == 479
+		|| Type == 492
+		|| Type == 540
+		|| Type == 541
+		|| Type == 542
+		|| Type == 522
+		|| Type == 543 || Type == 544
+		|| Type == 545
+		|| Type == 546
+		|| Type == 547
+		|| Type == 577 || Type == 578
+		|| Type == 579)
+	{
+		kind = KIND_NPC;
+	}
+
+	if (Type >= 480 && Type <= 491)
+	{
+		kind = KIND_MONSTER;
+	}
+
+	if (Type == 451)
+	{
+		kind = KIND_TMP;
+	}
+
+	return kind;
+}
+
+static const char* gmKindLabel(int kind)
+{
+	switch (kind)
+	{
+	case KIND_NPC: return "NPC";
+	case KIND_TRAP: return "TRAP";
+	case KIND_TMP: return "TMP";
+	default: return "MONSTER";
+	}
+}
+
+static void gmRequestMonsterDb(BYTE flags)
+{
+	PMSG_GM_MONSTER_DB_REQ pMsg;
+	pMsg.header.set(0xFA, 0x00, sizeof(pMsg));
+	pMsg.flags = flags;
+	DataSend((BYTE*)&pMsg, pMsg.header.size);
+}
+
+static void gmUpdateMonsterPreviewState(int monsterIndex)
+{
+	s_gmMonsterPreviewOk = false;
+	s_gmMonsterPreviewRenderIndex = -1;
+	s_gmMonsterPreviewKind = KIND_MONSTER;
+
+	static const int s_gmPreviewCharacterKey = 0x6F01;
+	DeleteCharacter(s_gmPreviewCharacterKey);
+
+	CHARACTER* c = CreateMonster(monsterIndex, 0, 0, s_gmPreviewCharacterKey);
+	if (c == 0)
+	{
+		return;
+	}
+
+	OBJECT* o = &c->Object;
+	const int modelType = o->Type;
+	const int kind = o->Kind;
+
+	if (!gmIsModelReady(modelType))
+	{
+		if (monsterIndex >= 0 && monsterIndex < MAX_MODEL_MONSTER)
+		{
+			OpenMonsterModel(monsterIndex);
+		}
+		if (kind == KIND_NPC)
+		{
+			OpenNpc(modelType);
+		}
+	}
+
+	s_gmMonsterPreviewOk = gmIsModelReady(modelType);
+	s_gmMonsterPreviewRenderIndex = modelType;
+	s_gmMonsterPreviewKind = kind;
+
+	DeleteCharacter(s_gmPreviewCharacterKey);
 }
 
 void SEASON3B::CGFxEffectHandle::RenderFrame()
@@ -580,15 +757,19 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 			}
 			else
 			{
-				const type_monster& mons = GMMonsterMng->GetAll();
-				ImGui::Text("Loaded: %d", (int)mons.size());
+				const std::vector<GM_MONSTER_INFO_NET>& db = GMMonsterDb_Get();
+				ImGui::Text("MonsterDB: %d / %d", GMMonsterDb_Received(), GMMonsterDb_Total());
 
 				if (ImGui::Button("Scan models"))
 				{
-					s_gmMonsterScanActive = true;
+					s_gmMonsterScanActive = (db.empty() ? false : true);
 					s_gmMonsterScanIndex = 0;
-					s_gmMonsterScanTotal = (int)mons.size();
+					s_gmMonsterScanTotal = (int)db.size();
 					s_gmMonsterIssuesMissingModel = 0;
+					s_gmMonsterIssuesCreateFail = 0;
+					s_gmMonsterIssuesModelNotReady = 0;
+					s_gmMonsterLastIssue[0] = '\0';
+					s_gmMonsterReportInit = false;
 				}
 				ImGui::SameLine();
 				if (ImGui::Button("Stop"))
@@ -603,15 +784,63 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 				}
 
 				ImGui::Text("Missing model: %d", s_gmMonsterIssuesMissingModel);
+				ImGui::Text("Create fail: %d", s_gmMonsterIssuesCreateFail);
+				ImGui::Text("Not ready: %d", s_gmMonsterIssuesModelNotReady);
+
+				if (s_gmMonsterLastIssue[0] != '\0')
+					ImGui::TextWrapped("%s", s_gmMonsterLastIssue);
 
 				if (s_gmMonsterScanActive && s_gmMonsterScanTotal > 0)
 				{
 					const int end = (s_gmMonsterScanIndex + s_gmMonsterScanBatch > s_gmMonsterScanTotal) ? s_gmMonsterScanTotal : (s_gmMonsterScanIndex + s_gmMonsterScanBatch);
 					for (int i = s_gmMonsterScanIndex; i < end; ++i)
 					{
-						const int modelType = mons[i].RenderIndex;
-						if (!gmIsModelReady(modelType))
+						const int monsterIndex = db[i].Index;
+						const char* name = (db[i].Name[0] != '\0') ? db[i].Name : "Unnamed";
+
+						static const int s_gmScanCharacterKey = 0x6F02;
+						DeleteCharacter(s_gmScanCharacterKey);
+
+						CHARACTER* c = CreateMonster(monsterIndex, 0, 0, s_gmScanCharacterKey);
+						if (c == 0)
+						{
 							s_gmMonsterIssuesMissingModel++;
+							s_gmMonsterIssuesCreateFail++;
+							sprintf_s(s_gmMonsterLastIssue, "CreateMonster failed: %d %s", monsterIndex, name);
+							if (!s_gmMonsterReportInit)
+							{
+								g_ErrorReport.Create("GMMenu_MonsterAudit.log");
+								s_gmMonsterReportInit = true;
+							}
+							g_ErrorReport.Write("[GMMenu] CreateMonster failed: idx=%d name=%s\r\n", monsterIndex, name);
+							continue;
+						}
+
+						const int modelType = c->Object.Type;
+						const int kind = c->Object.Kind;
+
+						if (!gmIsModelReady(modelType))
+						{
+							if (monsterIndex >= 0 && monsterIndex < MAX_MODEL_MONSTER)
+								OpenMonsterModel(monsterIndex);
+							if (kind == KIND_NPC)
+								OpenNpc(modelType);
+						}
+
+						if (!gmIsModelReady(modelType))
+						{
+							s_gmMonsterIssuesMissingModel++;
+							s_gmMonsterIssuesModelNotReady++;
+							sprintf_s(s_gmMonsterLastIssue, "Model missing: idx=%d model=%d kind=%s name=%s", monsterIndex, modelType, gmKindLabel(kind), name);
+							if (!s_gmMonsterReportInit)
+							{
+								g_ErrorReport.Create("GMMenu_MonsterAudit.log");
+								s_gmMonsterReportInit = true;
+							}
+							g_ErrorReport.Write("[GMMenu] Model missing: idx=%d model=%d kind=%d name=%s\r\n", monsterIndex, modelType, kind, name);
+						}
+
+						DeleteCharacter(s_gmScanCharacterKey);
 					}
 					s_gmMonsterScanIndex = end;
 					if (s_gmMonsterScanIndex >= s_gmMonsterScanTotal)
@@ -690,21 +919,20 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 		}
 		else
 		{
-			if (s_gmSelectedMonsterIndex != -1 && s_gmMonsterPreviewOk && s_gmMonsterPreviewRenderIndex != -1)
+			if (s_gmSelectedMonsterIndex != -1)
 			{
 				const float rotY = s_previewAutoRotate ? s_previewRotY : 0.0f;
 				SEASON3B::begin3D();
 				g_GMMenuPreviewActive = true;
 				gmRenderMonsterPreview3D(
 					s_gmSelectedMonsterIndex,
-					s_gmMonsterPreviewRenderIndex,
-					s_gmMonsterPreviewKind,
 					s_gmMonsterPreviewScale,
 					rotY,
 					previewX,
 					previewY,
 					previewW,
-					previewH);
+					previewH,
+					s_gmMonsterPreviewAction);
 				g_GMMenuPreviewActive = false;
 				SEASON3B::endrender3D();
 			}
@@ -716,66 +944,195 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 {
 	if (s_gmMenuActiveTab != 0)
 	{
-		s_gmMonsterPreviewOk = false;
-		s_gmMonsterPreviewRenderIndex = -1;
-		s_gmMonsterPreviewScale = 1.0f;
-
 		static char s_monFilter[64] = { 0 };
 		static int s_monSpawnCount = 1;
 		static char s_monSpawnCommand[32] = "/summon";
+		static int s_monKindFilter = 0;
+		static int s_monSourceFilter = 0;
 
-		ImGui::BeginChild("MonList", ImVec2((220 * g_fScreenRate_x), 0), ImGuiChildFlags_Border);
-		ImGui::InputText("Filter", s_monFilter, sizeof(s_monFilter));
+		const bool loading = GMMonsterDb_IsLoading();
+		const bool ready = GMMonsterDb_IsReady();
+		const int total = GMMonsterDb_Total();
+		const int received = GMMonsterDb_Received();
 
-		const type_monster& mons = GMMonsterMng->GetAll();
-		std::vector<int> viewMonsterIndices;
-		std::vector<std::string> viewLabels;
-		viewMonsterIndices.reserve(mons.size());
-		viewLabels.reserve(mons.size());
-
-		for (size_t i = 0; i < mons.size(); ++i)
+		if (!ready && !loading && !s_gmMonsterDbRequested)
 		{
-			const CUSTOM_MONSTER_INFO& m = mons[i];
-			char label[160] = { 0 };
-			const char* name = (m.Name[0] != '\0') ? m.Name : "Unnamed";
-			const char* kind = (m.Kind == KIND_NPC) ? "NPC" : "MON";
-			sprintf_s(label, "%d [%s] %s", m.monsterIndex, kind, name);
-
-			if (!gmStrCaseContains(label, s_monFilter))
-				continue;
-
-			viewMonsterIndices.push_back(m.monsterIndex);
-			viewLabels.emplace_back(label);
+			gmRequestMonsterDb(0);
+			s_gmMonsterDbRequested = true;
 		}
 
-		std::vector<const char*> viewLabelPtrs;
-		viewLabelPtrs.reserve(viewLabels.size());
-		for (size_t i = 0; i < viewLabels.size(); ++i)
-			viewLabelPtrs.push_back(viewLabels[i].c_str());
+		ImGui::BeginChild("MonList", ImVec2((320 * g_fScreenRate_x), 0), ImGuiChildFlags_Border);
 
-		int selectedRow = -1;
-		for (size_t i = 0; i < viewMonsterIndices.size(); ++i)
+		if (ImGui::Button("Reload from server"))
 		{
-			if (viewMonsterIndices[i] == s_gmSelectedMonsterIndex)
-			{
-				selectedRow = (int)i;
-				break;
-			}
+			GMMonsterDb_Reset();
+			s_gmMonsterDbRequested = false;
+			s_gmSelectedMonsterIndex = -1;
+			s_gmSelectedMonsterRow = -1;
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Request"))
+		{
+			GMMonsterDb_Reset();
+			gmRequestMonsterDb(0);
+			s_gmMonsterDbRequested = true;
 		}
 
-		if (!viewLabelPtrs.empty())
+		if (loading)
 		{
-			if (selectedRow < 0)
-				selectedRow = 0;
-			if (ImGui::ListBox("##monsters_list", &selectedRow, viewLabelPtrs.data(), (int)viewLabelPtrs.size(), 16))
+			ImGui::Text("Loading: %d / %d", received, total);
+			if (total > 0)
 			{
-				if (selectedRow >= 0 && selectedRow < (int)viewMonsterIndices.size())
-					s_gmSelectedMonsterIndex = viewMonsterIndices[selectedRow];
+				const float p = (received <= 0) ? 0.0f : (float)received / (float)total;
+				ImGui::ProgressBar(p, ImVec2(-1.0f, 0.0f));
 			}
+		}
+		else if (ready)
+		{
+			ImGui::Text("Loaded: %d", received);
 		}
 		else
 		{
-			ImGui::Text("No results");
+			ImGui::Text("Not loaded");
+		}
+
+		ImGui::Separator();
+
+		ImGui::InputText("Filter", s_monFilter, sizeof(s_monFilter));
+
+		const char* kindItems[] = { "All", "MONSTER", "NPC", "TRAP", "TMP" };
+		ImGui::Combo("Kind", &s_monKindFilter, kindItems, IM_ARRAYSIZE(kindItems));
+
+		const char* srcItems[] = { "All", "Standard", "Custom" };
+		ImGui::Combo("Source", &s_monSourceFilter, srcItems, IM_ARRAYSIZE(srcItems));
+
+		const std::vector<GM_MONSTER_INFO_NET>& db = GMMonsterDb_Get();
+		std::vector<int> viewRows;
+		viewRows.reserve(db.size());
+
+		for (int i = 0; i < (int)db.size(); ++i)
+		{
+			const GM_MONSTER_INFO_NET& m = db[i];
+
+			const int kind = gmInferMonsterKind(m.Index);
+			const bool isCustom = (GMMonsterMng->FindMonsterByIndex(m.Index) != 0);
+
+			if (s_monKindFilter == 1 && kind != KIND_MONSTER) continue;
+			if (s_monKindFilter == 2 && kind != KIND_NPC) continue;
+			if (s_monKindFilter == 3 && kind != KIND_TRAP) continue;
+			if (s_monKindFilter == 4 && kind != KIND_TMP) continue;
+
+			if (s_monSourceFilter == 1 && isCustom) continue;
+			if (s_monSourceFilter == 2 && !isCustom) continue;
+
+			char label[256] = { 0 };
+			sprintf_s(label, "%d %s %s", m.Index, gmKindLabel(kind), m.Name);
+			if (!gmStrCaseContains(label, s_monFilter))
+				continue;
+
+			viewRows.push_back(i);
+		}
+
+		const ImGuiTableFlags flags =
+			ImGuiTableFlags_Resizable |
+			ImGuiTableFlags_Reorderable |
+			ImGuiTableFlags_Sortable |
+			ImGuiTableFlags_RowBg |
+			ImGuiTableFlags_BordersOuter |
+			ImGuiTableFlags_BordersV |
+			ImGuiTableFlags_ScrollY |
+			ImGuiTableFlags_SizingFixedFit;
+
+		const float tableHeight = ImGui::GetContentRegionAvail().y;
+		if (ImGui::BeginTable("##gm_monster_table", 6, flags, ImVec2(0, tableHeight)))
+		{
+			ImGui::TableSetupScrollFreeze(0, 1);
+			ImGui::TableSetupColumn("Index", ImGuiTableColumnFlags_DefaultSort);
+			ImGui::TableSetupColumn("Name");
+			ImGui::TableSetupColumn("Kind");
+			ImGui::TableSetupColumn("Source");
+			ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_PreferSortDescending);
+			ImGui::TableSetupColumn("Life", ImGuiTableColumnFlags_PreferSortDescending);
+			ImGui::TableHeadersRow();
+
+			if (ImGuiTableSortSpecs* sortSpecs = ImGui::TableGetSortSpecs())
+			{
+				if (sortSpecs->SpecsCount > 0)
+				{
+					const ImGuiTableColumnSortSpecs* spec = &sortSpecs->Specs[0];
+					const int col = spec->ColumnIndex;
+					const bool desc = (spec->SortDirection == ImGuiSortDirection_Descending);
+
+					std::sort(viewRows.begin(), viewRows.end(), [&](int a, int b)
+						{
+							const GM_MONSTER_INFO_NET& A = db[a];
+							const GM_MONSTER_INFO_NET& B = db[b];
+
+							int cmp = 0;
+							switch (col)
+							{
+							case 0: cmp = (A.Index < B.Index) ? -1 : (A.Index > B.Index ? 1 : 0); break;
+							case 1: cmp = _stricmp(A.Name, B.Name); break;
+							case 2:
+							{
+								const int ak = gmInferMonsterKind(A.Index);
+								const int bk = gmInferMonsterKind(B.Index);
+								cmp = (ak < bk) ? -1 : (ak > bk ? 1 : 0);
+							}
+							break;
+							case 3:
+							{
+								const bool ac = (GMMonsterMng->FindMonsterByIndex(A.Index) != 0);
+								const bool bc = (GMMonsterMng->FindMonsterByIndex(B.Index) != 0);
+								cmp = (ac == bc) ? 0 : (ac ? 1 : -1);
+							}
+							break;
+							case 4: cmp = (A.Level < B.Level) ? -1 : (A.Level > B.Level ? 1 : 0); break;
+							case 5: cmp = (A.Life < B.Life) ? -1 : (A.Life > B.Life ? 1 : 0); break;
+							default: cmp = 0; break;
+							}
+
+							return desc ? (cmp > 0) : (cmp < 0);
+						});
+				}
+			}
+
+			for (int n = 0; n < (int)viewRows.size(); ++n)
+			{
+				const int rowIndex = viewRows[n];
+				const GM_MONSTER_INFO_NET& m = db[rowIndex];
+				const int kind = gmInferMonsterKind(m.Index);
+				const bool isCustom = (GMMonsterMng->FindMonsterByIndex(m.Index) != 0);
+
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				const bool selected = (s_gmSelectedMonsterRow == rowIndex);
+				if (ImGui::Selectable(std::to_string(m.Index).c_str(), selected, ImGuiSelectableFlags_SpanAllColumns))
+				{
+					s_gmSelectedMonsterRow = rowIndex;
+					s_gmSelectedMonsterIndex = m.Index;
+					s_gmMonsterPreviewScale = 1.0f;
+					s_gmMonsterPreviewAction = -1;
+					gmUpdateMonsterPreviewState(m.Index);
+				}
+
+				ImGui::TableSetColumnIndex(1);
+				ImGui::TextUnformatted((m.Name[0] != '\0') ? m.Name : "Unnamed");
+
+				ImGui::TableSetColumnIndex(2);
+				ImGui::TextUnformatted(gmKindLabel(kind));
+
+				ImGui::TableSetColumnIndex(3);
+				ImGui::TextUnformatted(isCustom ? "Custom" : "Std");
+
+				ImGui::TableSetColumnIndex(4);
+				ImGui::Text("%d", m.Level);
+
+				ImGui::TableSetColumnIndex(5);
+				ImGui::Text("%d", m.Life);
+			}
+
+			ImGui::EndTable();
 		}
 
 		ImGui::EndChild();
@@ -783,70 +1140,116 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 		ImGui::SameLine();
 		ImGui::BeginChild("MonDetails", ImVec2(0, 0), ImGuiChildFlags_Border);
 
-		if (s_gmSelectedMonsterIndex == -1)
+		if (s_gmSelectedMonsterRow < 0 || s_gmSelectedMonsterRow >= (int)db.size())
 		{
-			ImGui::Text("Select a monster or NPC");
+			ImGui::Text("Select a monster");
 		}
 		else
 		{
-			CUSTOM_MONSTER_INFO* m = GMMonsterMng->FindMonsterByIndex(s_gmSelectedMonsterIndex);
-			if (m == 0)
+			const GM_MONSTER_INFO_NET& m = db[s_gmSelectedMonsterRow];
+			const int kind = gmInferMonsterKind(m.Index);
+			const bool isCustom = (GMMonsterMng->FindMonsterByIndex(m.Index) != 0);
+
+			ImGui::Text("Index: %d", m.Index);
+			ImGui::Text("Name: %s", (m.Name[0] != '\0') ? m.Name : "Unnamed");
+			ImGui::Text("Kind: %s", gmKindLabel(kind));
+			ImGui::Text("Source: %s", isCustom ? "Custom" : "Standard");
+
+			ImGui::Separator();
+
+			ImGui::Text("Preview: %s", s_gmMonsterPreviewOk ? "OK" : "Missing");
+			ImGui::Text("ModelId: %d", s_gmMonsterPreviewRenderIndex);
+			if (ImGui::Button("Refresh preview state"))
 			{
-				ImGui::Text("Not found: %d", s_gmSelectedMonsterIndex);
+				gmUpdateMonsterPreviewState(m.Index);
+			}
+
+			ImGui::SliderFloat("Scale", &s_gmMonsterPreviewScale, 0.25f, 3.0f, "%.2f");
+
+			BMD* pModel = (gmClientModels && s_gmMonsterPreviewRenderIndex >= 0) ? gmClientModels->GetModel(s_gmMonsterPreviewRenderIndex) : 0;
+			const int actionCount = (pModel != 0) ? pModel->NumActions : 0;
+
+			bool useDefaultAction = (s_gmMonsterPreviewAction < 0);
+			if (ImGui::Checkbox("Default action", &useDefaultAction))
+			{
+				s_gmMonsterPreviewAction = useDefaultAction ? -1 : 0;
+			}
+
+			if (!useDefaultAction)
+			{
+				if (actionCount > 0)
+				{
+					if (s_gmMonsterPreviewAction < 0) s_gmMonsterPreviewAction = 0;
+					if (s_gmMonsterPreviewAction >= actionCount) s_gmMonsterPreviewAction = actionCount - 1;
+					ImGui::SliderInt("Action", &s_gmMonsterPreviewAction, 0, actionCount - 1);
+				}
+				else
+				{
+					s_gmMonsterPreviewAction = -1;
+					ImGui::Text("Actions: 0");
+				}
 			}
 			else
 			{
-				const char* kind = (m->Kind == KIND_NPC) ? "NPC" : "MONSTER";
-				ImGui::Text("Index: %d", m->monsterIndex);
-				ImGui::Text("Kind: %s", kind);
-				ImGui::Text("RenderIndex: %d", m->RenderIndex);
-				ImGui::Text("Scale: %.2f", m->fSize);
-				ImGui::Text("Name: %s", (m->Name[0] != '\0') ? m->Name : "Unnamed");
+				ImGui::Text("Actions: %d", actionCount);
+			}
 
-				if (m->RenderIndex < 0 && m->isUsable())
-					m->OpenLoad();
+			ImGui::Separator();
 
-				int renderIndex = m->RenderIndex;
-				if (renderIndex < 0 && m->monsterIndex >= 0 && m->monsterIndex < MAX_MODEL_MONSTER)
-				{
-					OpenMonsterModel(m->monsterIndex);
-					renderIndex = MODEL_MONSTER01 + m->monsterIndex;
-				}
+			if (ImGui::CollapsingHeader("Stats", ImGuiTreeNodeFlags_DefaultOpen))
+			{
+				ImGui::Text("Level: %d", m.Level);
+				ImGui::Text("AINumber: %d", m.AINumber);
+				ImGui::Text("Attribute: %d", m.Attribute);
+				ImGui::Text("MonsterSkill: %d", m.MonsterSkill);
+				ImGui::Text("Rate: %d", m.Rate);
+				ImGui::Text("RegenTime: %d", m.RegenTime);
+				ImGui::Text("Life: %d  Mana: %d  ScriptLife: %d", m.Life, m.Mana, m.ScriptLife);
+				ImGui::Text("Damage: %d - %d", m.DamageMin, m.DamageMax);
+				ImGui::Text("Defense: %d  MagicDefense: %d", m.Defense, m.MagicDefense);
+				ImGui::Text("AttackRate: %d  DefenseRate: %d", m.AttackRate, m.DefenseRate);
+				ImGui::Text("MoveSpeed: %d  AttackSpeed: %d", m.MoveSpeed, m.AttackSpeed);
+				ImGui::Text("MoveRange: %d  AttackRange: %d  ViewRange: %d", m.MoveRange, m.AttackRange, m.ViewRange);
+				ImGui::Text("AttackType: %d", m.AttackType);
+				ImGui::Text("ItemRate: %d  MoneyRate: %d  MaxItemLevel: %d", m.ItemRate, m.MoneyRate, m.MaxItemLevel);
+			}
 
-				if (m->Kind == KIND_NPC && renderIndex >= 0)
-					OpenNpc(renderIndex);
+			if (ImGui::CollapsingHeader("Resist"))
+			{
+				ImGui::Text("0:%d 1:%d 2:%d 3:%d 4:%d 5:%d 6:%d",
+					m.Resistance[0],
+					m.Resistance[1],
+					m.Resistance[2],
+					m.Resistance[3],
+					m.Resistance[4],
+					m.Resistance[5],
+					m.Resistance[6]);
+			}
 
-				const bool ok = gmIsModelReady(renderIndex);
-				s_gmMonsterPreviewOk = ok;
-				s_gmMonsterPreviewRenderIndex = ok ? renderIndex : -1;
-				s_gmMonsterPreviewScale = m->fSize;
-				s_gmMonsterPreviewKind = m->Kind;
+			if (ImGui::CollapsingHeader("Elemental"))
+			{
+				ImGui::Text("Attr: %d  Pattern: %d  Def: %d", m.ElementalAttribute, m.ElementalPattern, m.ElementalDefense);
+				ImGui::Text("Dmg: %d - %d", m.ElementalDamageMin, m.ElementalDamageMax);
+				ImGui::Text("AtkRate: %d  DefRate: %d", m.ElementalAttackRate, m.ElementalDefenseRate);
+			}
 
-				if (!ok)
-					ImGui::Text("Model: missing");
+			ImGui::Separator();
+
+			ImGui::Text("Spawn");
+			ImGui::InputText("Command", s_monSpawnCommand, sizeof(s_monSpawnCommand));
+			ImGui::InputInt("Count", &s_monSpawnCount);
+			if (s_monSpawnCount < 1) s_monSpawnCount = 1;
+			if (s_monSpawnCount > 100) s_monSpawnCount = 100;
+
+			if (ImGui::Button("Spawn"))
+			{
+				char cmd[128] = { 0 };
+				const char* prefix = (s_monSpawnCommand[0] != '\0') ? s_monSpawnCommand : "/summon";
+				if (prefix[0] == '/')
+					sprintf_s(cmd, "%s %d %d", prefix, m.Index, s_monSpawnCount);
 				else
-					ImGui::Text("Model: OK");
-
-				ImGui::Separator();
-
-				ImGui::InputText("Command", s_monSpawnCommand, sizeof(s_monSpawnCommand));
-				if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-					ImGui::SetTooltip("Example: /summon");
-
-				ImGui::InputInt("Count", &s_monSpawnCount);
-				if (s_monSpawnCount < 1) s_monSpawnCount = 1;
-				if (s_monSpawnCount > 100) s_monSpawnCount = 100;
-
-				if (ImGui::Button("Spawn"))
-				{
-					char cmd[128] = { 0 };
-					const char* prefix = (s_monSpawnCommand[0] != '\0') ? s_monSpawnCommand : "/summon";
-					if (prefix[0] == '/')
-						sprintf_s(cmd, "%s %d %d", prefix, m->monsterIndex, s_monSpawnCount);
-					else
-						sprintf_s(cmd, "/%s %d %d", prefix, m->monsterIndex, s_monSpawnCount);
-					gmSendChatRaw(cmd);
-				}
+					sprintf_s(cmd, "/%s %d %d", prefix, m.Index, s_monSpawnCount);
+				gmSendChatRaw(cmd);
 			}
 		}
 

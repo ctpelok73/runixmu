@@ -4,25 +4,11 @@
 #include "CGMEffectHandle.h"
 #include "MonkSystem.h"
 #include "Protocol.h"
-#include "CSItemOption.h"
-#include "CSParts.h"
 #include "ZzzInventory.h"
-#include "ZzzCharacter.h"
 #include "ZzzOpenglUtil.h"
-#include "SocketSystem.h"
-#include "CGMMonsterMng.h"
-#include "supportingfeature.h"
-#include "./Utilities/Log/ErrorReport.h"
-#include "./Utilities/Log/muConsoleDebug.h"
 
-#include <set>
 #include <string>
 #include <vector>
-#include <algorithm>
-#include <cstdarg>
-
-#include "imgui_impl_win32.h"
-#include "imgui_impl_opengl2.h"
 
 #ifdef EFFECT_MNG_HANDLE
 

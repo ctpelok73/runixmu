@@ -51,6 +51,72 @@ struct PMSG_GM_CLEAR_INVENTORY_RECV
 	PSBMSG_HEAD header; // C1:F3:F4
 };
 
+#pragma pack(push, 1)
+struct PMSG_GM_MONSTER_DB_REQ
+{
+	PSBMSG_HEAD header; // C1:FA:00
+	BYTE flags;
+};
+
+struct PMSG_GM_MONSTER_DB_BEGIN
+{
+	PSBMSG_HEAD header; // C1:FA:01
+	WORD total;
+	WORD chunkSize;
+};
+
+struct GM_MONSTER_INFO_NET
+{
+	int Index;
+	int Rate;
+	char Name[32];
+	int Level;
+	int AINumber;
+	int ScriptLife;
+	int Life;
+	int Mana;
+	int DamageMin;
+	int DamageMax;
+	int Defense;
+	int MagicDefense;
+	int AttackRate;
+	int DefenseRate;
+	int MoveRange;
+	int AttackRange;
+	int AttackType;
+	int ViewRange;
+	int MoveSpeed;
+	int AttackSpeed;
+	int RegenTime;
+	int Attribute;
+	int ItemRate;
+	int MoneyRate;
+	int MaxItemLevel;
+	int Resistance[7];
+	int MonsterSkill;
+	int ElementalAttribute;
+	int ElementalPattern;
+	int ElementalDefense;
+	int ElementalDamageMin;
+	int ElementalDamageMax;
+	int ElementalAttackRate;
+	int ElementalDefenseRate;
+};
+
+struct PMSG_GM_MONSTER_DB_DATA
+{
+	PSWMSG_HEAD header; // C2:FA:02
+	WORD start;
+	WORD count;
+	GM_MONSTER_INFO_NET items[1];
+};
+
+struct PMSG_GM_MONSTER_DB_END
+{
+	PSBMSG_HEAD header; // C1:FA:03
+};
+#pragma pack(pop)
+
 
 struct RANK_INFO_SEND
 {
@@ -59,3 +125,10 @@ struct RANK_INFO_SEND
 
 extern std::vector <std::string> m_DataSelectNameTop;
 BOOL ProtocolCoreEx(BYTE head, BYTE* lpMsg, int size, int key);
+
+void GMMonsterDb_Reset();
+bool GMMonsterDb_IsReady();
+bool GMMonsterDb_IsLoading();
+int GMMonsterDb_Total();
+int GMMonsterDb_Received();
+const std::vector<GM_MONSTER_INFO_NET>& GMMonsterDb_Get();
