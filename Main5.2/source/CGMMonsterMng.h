@@ -14,6 +14,7 @@ public:
 	void LoadModelMonster();
 	bool IsMonsterByIndex(int monsterIndex);
 	CUSTOM_MONSTER_INFO* FindMonsterByIndex(int monsterIndex);
+	const type_monster& GetAll() const;
 
 	CHARACTER* CreateMonster(int monsterIndex, int PositionX, int PositionY, int Key);
 private:

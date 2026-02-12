@@ -23,10 +23,36 @@ void CGMMonsterMng::LoadDataMonster(CUSTOM_MONSTER_INFO* info, int Size)
 {
 	for (int i = 0; i < Size; i++)
 	{
-		if (info[i].isUsable() == true)
+		CUSTOM_MONSTER_INFO m = info[i];
+		m.Name[sizeof(m.Name) - 1] = '\0';
+		m.directory[sizeof(m.directory) - 1] = '\0';
+		m.filename[sizeof(m.filename) - 1] = '\0';
+
+		if (m.monsterIndex == -1)
+			continue;
+
+		if (m.fSize <= 0.0f)
+			m.fSize = 1.0f;
+
+		if (m.Kind != KIND_MONSTER && m.Kind != KIND_NPC)
+			m.Kind = KIND_MONSTER;
+
+		if (m.RenderIndex < 0 || m.RenderIndex >= MAX_MODELS)
+			m.RenderIndex = -1;
+
+		bool replaced = false;
+		for (size_t j = 0; j < UniqueMonsterData.size(); ++j)
 		{
-			UniqueMonsterData.push_back(info[i]);
+			if (UniqueMonsterData[j].monsterIndex == m.monsterIndex)
+			{
+				UniqueMonsterData[j] = m;
+				replaced = true;
+				break;
+			}
 		}
+
+		if (!replaced)
+			UniqueMonsterData.push_back(m);
 	}
 }
 
@@ -36,6 +62,11 @@ void CGMMonsterMng::LoadModelMonster()
 	{
 		UniqueMonsterData[i].OpenLoad();
 	}
+}
+
+const type_monster& CGMMonsterMng::GetAll() const
+{
+	return UniqueMonsterData;
 }
 
 bool CGMMonsterMng::IsMonsterByIndex(int monsterIndex)

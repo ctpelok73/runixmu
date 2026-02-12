@@ -5,8 +5,13 @@
 #include "MonkSystem.h"
 #include "Protocol.h"
 #include "CSItemOption.h"
+#include "CSParts.h"
 #include "ZzzInventory.h"
+#include "ZzzCharacter.h"
+#include "ZzzOpenglUtil.h"
 #include "SocketSystem.h"
+#include "CGMMonsterMng.h"
+#include "supportingfeature.h"
 #include "./Utilities/Log/ErrorReport.h"
 #include "./Utilities/Log/muConsoleDebug.h"
 
@@ -173,6 +178,19 @@ extern bool g_GMMenuPreviewActive;
 extern bool g_GMMenuPreviewAutoRotate;
 extern float g_GMMenuPreviewRotateY;
 
+static int s_gmMenuActiveTab = 0;
+static int s_gmSelectedMonsterIndex = -1;
+static bool s_gmMonsterPreviewOk = false;
+static int s_gmMonsterPreviewRenderIndex = -1;
+static float s_gmMonsterPreviewScale = 1.0f;
+static int s_gmMonsterPreviewKind = KIND_MONSTER;
+
+static bool s_gmMonsterScanActive = false;
+static int s_gmMonsterScanIndex = 0;
+static int s_gmMonsterScanTotal = 0;
+static int s_gmMonsterScanBatch = 128;
+static int s_gmMonsterIssuesMissingModel = 0;
+
 static bool s_gmAuditAutoLog = true;
 static bool s_gmAuditLogMissingModels = true;
 static bool s_gmAuditLogMissingTooltips = true;
@@ -190,6 +208,282 @@ static int s_gmAuditLastIssueItem = -1;
 static char s_gmAuditLastIssue[256] = { 0 };
 static bool s_gmAuditReportInit = false;
 static std::set<unsigned long long> s_gmAuditLoggedIssues;
+
+static void gmSendChatRaw(const char* text)
+{
+	if (text == 0 || text[0] == '\0')
+		return;
+	if (Hero == 0)
+		return;
+
+	PCHATING pMsg;
+	pMsg.Header.set(0x00, sizeof(pMsg));
+	memcpy(pMsg.ID, Hero->ID, MAX_ID_SIZE);
+	memset(pMsg.ChatText, 0, sizeof(pMsg.ChatText));
+	strncpy_s((char*)pMsg.ChatText, MAX_CHAT_SIZE, text, _TRUNCATE);
+	DataSend((BYTE*)&pMsg, pMsg.Header.Size);
+}
+
+static bool gmIsModelReady(int modelType)
+{
+	if (gmClientModels == 0)
+		return false;
+
+	BMD* pModel = gmClientModels->GetModel(modelType);
+	if (pModel == 0)
+		return false;
+
+	if (!pModel->m_bCompletedAlloc)
+		return false;
+
+	if (pModel->NumMeshs <= 0 || pModel->Meshs == 0)
+		return false;
+
+	if (pModel->NumBones <= 0 || pModel->Bones == 0)
+		return false;
+
+	if (pModel->NumActions <= 0 || pModel->Actions == 0)
+		return false;
+
+	bool hasKeys = false;
+	for (int i = 0; i < pModel->NumActions; ++i)
+	{
+		if (pModel->Actions[i].NumAnimationKeys > 0)
+		{
+			hasKeys = true;
+			break;
+		}
+	}
+	if (!hasKeys)
+		return false;
+
+	return true;
+}
+
+static int gmFindSafeActionIndex(int modelType)
+{
+	if (gmClientModels == 0)
+		return 0;
+
+	BMD* pModel = gmClientModels->GetModel(modelType);
+	if (pModel == 0 || pModel->Actions == 0 || pModel->NumActions <= 0)
+		return 0;
+
+	for (int i = 0; i < pModel->NumActions; ++i)
+	{
+		if (pModel->Actions[i].NumAnimationKeys > 0)
+			return i;
+	}
+
+	return 0;
+}
+
+static bool gmCalcObjectSafe(OBJECT* o, bool translate, int select, int extraMon)
+{
+	__try
+	{
+		return Calc_RenderObject(o, translate, select, extraMon) ? true : false;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		return false;
+	}
+}
+
+static bool gmCalcDrawObjectSafe(OBJECT* o, bool translate, int select, int extraMon)
+{
+	__try
+	{
+		const bool ok = Calc_RenderObject(o, translate, select, extraMon) ? true : false;
+		if (ok)
+			Draw_RenderObject(o, translate, select, extraMon);
+		return true;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		return false;
+	}
+}
+
+static void gmRenderMonsterPreview3D(int monsterIndex, int modelType, int kind, float scale, float rotY, float previewX, float previewY, float previewW, float previewH)
+{
+	static bool s_gmPreviewInit = false;
+	static int s_gmPreviewModelType = -1;
+	static int s_gmPreviewActionIndex = 0;
+	static OBJECT s_gmPreviewObject;
+
+	if (!gmIsModelReady(modelType))
+		return;
+
+	BMD* pModel = gmClientModels->GetModel(modelType);
+	if (pModel == 0)
+		return;
+
+	const float centerX = previewX + (previewW * 0.5f);
+	const float centerY = previewY + (previewH * 0.5f);
+
+	const int clipX = (int)(previewX * g_fScreenRate_x);
+	const int clipYTop = (int)(previewY * g_fScreenRate_y);
+	const int clipW = (int)(previewW * g_fScreenRate_x);
+	const int clipH = (int)(previewH * g_fScreenRate_y);
+
+	const GLboolean oldScissorEnabled = glIsEnabled(GL_SCISSOR_TEST);
+	GLint oldScissorBox[4] = { 0, 0, 0, 0 };
+	glGetIntegerv(GL_SCISSOR_BOX, oldScissorBox);
+
+	const bool hasClipRect = (clipW > 0 && clipH > 0);
+
+	if (clipW > 0 && clipH > 0)
+	{
+		const int clipY = WindowHeight - (clipYTop + clipH);
+		glEnable(GL_SCISSOR_TEST);
+		glScissor(clipX, clipY, clipW, clipH);
+
+		glMatrixMode(GL_PROJECTION);
+		glPushMatrix();
+		glLoadIdentity();
+		glViewport2(clipX, clipYTop, clipW, clipH);
+		gluPerspective2(1.f, (float)(clipW) / (float)(clipH), RENDER_ITEMVIEW_NEAR, RENDER_ITEMVIEW_FAR);
+
+		glMatrixMode(GL_MODELVIEW);
+		glPushMatrix();
+		glLoadIdentity();
+		GetOpenGLMatrix(CameraMatrix);
+	}
+
+	vec3_t target;
+	CreateScreenVector((int)centerX, (int)centerY, target, false, false);
+
+	vec3_t direction;
+	vec3_t position;
+	VectorSubtract(target, MousePosition, direction);
+	const float distFactor = (modelType >= MODEL_MONSTER_DUMY_BENGI) ? 0.18f : 0.08f;
+	VectorMA(MousePosition, (float)ScaleMA(distFactor), direction, position);
+
+	if (!s_gmPreviewInit || modelType != s_gmPreviewModelType)
+	{
+		s_gmPreviewObject.Initialize();
+		s_gmPreviewObject.Live = true;
+		s_gmPreviewObject.Visible = true;
+		s_gmPreviewObject.Kind = kind;
+		s_gmPreviewObject.Type = modelType;
+		s_gmPreviewObject.SubType = 0;
+		s_gmPreviewObject.RenderType = 0;
+		s_gmPreviewActionIndex = gmFindSafeActionIndex(modelType);
+		s_gmPreviewObject.CurrentAction = s_gmPreviewActionIndex;
+		s_gmPreviewObject.PriorAction = s_gmPreviewActionIndex;
+		s_gmPreviewObject.AnimationFrame = 0.0f;
+		s_gmPreviewObject.PriorAnimationFrame = 0.0f;
+		s_gmPreviewObject.BlendMesh = -1;
+		s_gmPreviewObject.BlendMeshLight = 1.0f;
+		s_gmPreviewObject.BlendMeshTexCoordU = 0.0f;
+		s_gmPreviewObject.BlendMeshTexCoordV = 0.0f;
+		Vector(1.0f, 1.0f, 1.0f, s_gmPreviewObject.Light);
+		s_gmPreviewModelType = modelType;
+		s_gmPreviewInit = true;
+	}
+
+	if (!s_gmPreviewInit)
+		return;
+
+	OBJECT* o = &s_gmPreviewObject;
+	o->Live = true;
+	o->Visible = true;
+	o->Kind = kind;
+	o->Type = modelType;
+	float renderScale = (scale > 0.0f) ? scale : 1.0f;
+	if (modelType >= MODEL_MONSTER_DUMY_BENGI)
+		renderScale *= 0.01f;
+	o->Scale = renderScale;
+	o->Alpha = 1.0f;
+	o->AlphaTarget = 1.0f;
+	o->CurrentAction = s_gmPreviewActionIndex;
+	o->PriorAction = s_gmPreviewActionIndex;
+	Vector(1.0f, 1.0f, 1.0f, o->Light);
+	VectorCopy(position, o->Position);
+	VectorCopy(position, o->StartPosition);
+	Vector(270.0f, rotY, 0.0f, o->Angle);
+	Vector(0.0f, 0.0f, 0.0f, o->HeadAngle);
+
+	if (hasClipRect)
+	{
+		if (gmCalcObjectSafe(o, true, 0, 0) && pModel->fTransformedSize > 0.0f)
+		{
+			vec3_t camToObj;
+			VectorSubtract(o->Position, MousePosition, camToObj);
+			const float dist = VectorLength(camToObj);
+
+			if (dist > 0.0f)
+			{
+				const float fovRad = 1.0f * (Q_PI / 180.f);
+				const float focal = ((float)clipH * 0.5f) / tanf(fovRad * 0.5f);
+				const float targetPixels = (float)((clipW < clipH) ? clipW : clipH) * 0.92f;
+				const float currentPixels = focal * pModel->fTransformedSize / dist;
+
+				if (currentPixels > 0.0f && targetPixels > 0.0f)
+				{
+					float mul = targetPixels / currentPixels;
+					if (mul < 0.05f) mul = 0.05f;
+					if (mul > 4.00f) mul = 4.00f;
+					o->Scale = renderScale * mul;
+				}
+			}
+		}
+	}
+
+	if (!gmCalcDrawObjectSafe(o, true, 0, 0))
+		s_gmPreviewInit = false;
+
+	if (hasClipRect)
+	{
+		glMatrixMode(GL_MODELVIEW);
+		glPopMatrix();
+		glMatrixMode(GL_PROJECTION);
+		glPopMatrix();
+
+		glPushMatrix();
+		glLoadIdentity();
+		glViewport2(0, 0, WindowWidth, WindowHeight);
+		gluPerspective2(1.f, (float)(WindowWidth) / (float)(WindowHeight), RENDER_ITEMVIEW_NEAR, RENDER_ITEMVIEW_FAR);
+		glPopMatrix();
+		glMatrixMode(GL_MODELVIEW);
+	}
+
+	if (!oldScissorEnabled)
+		glDisable(GL_SCISSOR_TEST);
+	else
+		glEnable(GL_SCISSOR_TEST);
+	glScissor(oldScissorBox[0], oldScissorBox[1], oldScissorBox[2], oldScissorBox[3]);
+}
+
+static bool gmStrCaseContains(const char* haystack, const char* needle)
+{
+	if (needle == 0 || needle[0] == '\0')
+		return true;
+	if (haystack == 0 || haystack[0] == '\0')
+		return false;
+
+	for (const char* h = haystack; *h; ++h)
+	{
+		const char* h2 = h;
+		const char* n2 = needle;
+		while (*h2 && *n2)
+		{
+			const unsigned char ch = (unsigned char)*h2;
+			const unsigned char cn = (unsigned char)*n2;
+			const int lh = (ch >= 'A' && ch <= 'Z') ? (ch - 'A' + 'a') : ch;
+			const int ln = (cn >= 'A' && cn <= 'Z') ? (cn - 'A' + 'a') : cn;
+			if (lh != ln)
+				break;
+			++h2;
+			++n2;
+		}
+		if (*n2 == '\0')
+			return true;
+	}
+
+	return false;
+}
 
 SEASON3B::CGFxEffectHandle::CGFxEffectHandle()
 {
@@ -480,6 +774,21 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 
 	if (windowVisible)
 	{
+		if (ImGui::BeginTabBar("##gm_menu_tabs"))
+		{
+			if (ImGui::BeginTabItem("Items"))
+			{
+				s_gmMenuActiveTab = 0;
+				ImGui::EndTabItem();
+			}
+			if (ImGui::BeginTabItem("Monsters/NPCs"))
+			{
+				s_gmMenuActiveTab = 1;
+				ImGui::EndTabItem();
+			}
+			ImGui::EndTabBar();
+		}
+
 		ImGui::BeginChild("Child1", ImVec2((220 * g_fScreenRate_x), 0), ImGuiChildFlags_Border);
 
 		ImGui::BeginChild("Sub-Child1", ImVec2(0, (200.f * g_fScreenRate_y)), ImGuiChildFlags_Border);
@@ -504,46 +813,91 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 		{
 			ImGui::Text("Diagnostics");
 
-			ImGui::Checkbox("Auto log", &s_gmAuditAutoLog);
-			ImGui::Checkbox("Log missing model", &s_gmAuditLogMissingModels);
-			ImGui::Checkbox("Log missing tooltip", &s_gmAuditLogMissingTooltips);
-			ImGui::Checkbox("Log missing name", &s_gmAuditLogMissingName);
-			ImGui::Checkbox("Log missing client data", &s_gmAuditLogMissingClientData);
-
-			if (ImGui::Button("Scan all"))
+			if (s_gmMenuActiveTab == 0)
 			{
-				s_gmAuditScanActive = true;
-				s_gmAuditScanIndex = 0;
-				s_gmAuditScanTotal = MAX_ITEM_LINE;
-				s_gmAuditLoggedIssues.clear();
-				s_gmAuditIssuesMissingModel = 0;
-				s_gmAuditIssuesMissingTooltip = 0;
-				s_gmAuditIssuesMissingName = 0;
-				s_gmAuditIssuesMissingClientData = 0;
-				s_gmAuditLastIssueItem = -1;
-				s_gmAuditLastIssue[0] = '\0';
+				ImGui::Checkbox("Auto log", &s_gmAuditAutoLog);
+				ImGui::Checkbox("Log missing model", &s_gmAuditLogMissingModels);
+				ImGui::Checkbox("Log missing tooltip", &s_gmAuditLogMissingTooltips);
+				ImGui::Checkbox("Log missing name", &s_gmAuditLogMissingName);
+				ImGui::Checkbox("Log missing client data", &s_gmAuditLogMissingClientData);
+
+				if (ImGui::Button("Scan all"))
+				{
+					s_gmAuditScanActive = true;
+					s_gmAuditScanIndex = 0;
+					s_gmAuditScanTotal = MAX_ITEM_LINE;
+					s_gmAuditLoggedIssues.clear();
+					s_gmAuditIssuesMissingModel = 0;
+					s_gmAuditIssuesMissingTooltip = 0;
+					s_gmAuditIssuesMissingName = 0;
+					s_gmAuditIssuesMissingClientData = 0;
+					s_gmAuditLastIssueItem = -1;
+					s_gmAuditLastIssue[0] = '\0';
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("Stop"))
+				{
+					s_gmAuditScanActive = false;
+				}
+
+				if (s_gmAuditScanTotal > 0)
+				{
+					const float p = (s_gmAuditScanIndex <= 0) ? 0.0f : (float)s_gmAuditScanIndex / (float)s_gmAuditScanTotal;
+					ImGui::ProgressBar(p, ImVec2(-1.0f, 0.0f));
+				}
+
+				ImGui::Text("Missing model: %d", s_gmAuditIssuesMissingModel);
+				ImGui::Text("Missing tooltip: %d", s_gmAuditIssuesMissingTooltip);
+				ImGui::Text("Missing name: %d", s_gmAuditIssuesMissingName);
+				ImGui::Text("Missing client data: %d", s_gmAuditIssuesMissingClientData);
+
+				if (s_gmAuditLastIssueItem >= 0 && s_gmAuditLastIssue[0] != '\0')
+				{
+					ImGui::Text("Last: %d", s_gmAuditLastIssueItem);
+					ImGui::TextWrapped("%s", s_gmAuditLastIssue);
+				}
 			}
-			ImGui::SameLine();
-			if (ImGui::Button("Stop"))
+			else
 			{
-				s_gmAuditScanActive = false;
-			}
+				const type_monster& mons = GMMonsterMng->GetAll();
+				ImGui::Text("Loaded: %d", (int)mons.size());
 
-			if (s_gmAuditScanTotal > 0)
-			{
-				const float p = (s_gmAuditScanIndex <= 0) ? 0.0f : (float)s_gmAuditScanIndex / (float)s_gmAuditScanTotal;
-				ImGui::ProgressBar(p, ImVec2(-1.0f, 0.0f));
-			}
+				if (ImGui::Button("Scan models"))
+				{
+					s_gmMonsterScanActive = true;
+					s_gmMonsterScanIndex = 0;
+					s_gmMonsterScanTotal = (int)mons.size();
+					s_gmMonsterIssuesMissingModel = 0;
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("Stop"))
+				{
+					s_gmMonsterScanActive = false;
+				}
 
-			ImGui::Text("Missing model: %d", s_gmAuditIssuesMissingModel);
-			ImGui::Text("Missing tooltip: %d", s_gmAuditIssuesMissingTooltip);
-			ImGui::Text("Missing name: %d", s_gmAuditIssuesMissingName);
-			ImGui::Text("Missing client data: %d", s_gmAuditIssuesMissingClientData);
+				if (s_gmMonsterScanTotal > 0)
+				{
+					const float p = (s_gmMonsterScanIndex <= 0) ? 0.0f : (float)s_gmMonsterScanIndex / (float)s_gmMonsterScanTotal;
+					ImGui::ProgressBar(p, ImVec2(-1.0f, 0.0f));
+				}
 
-			if (s_gmAuditLastIssueItem >= 0 && s_gmAuditLastIssue[0] != '\0')
-			{
-				ImGui::Text("Last: %d", s_gmAuditLastIssueItem);
-				ImGui::TextWrapped("%s", s_gmAuditLastIssue);
+				ImGui::Text("Missing model: %d", s_gmMonsterIssuesMissingModel);
+
+				if (s_gmMonsterScanActive && s_gmMonsterScanTotal > 0)
+				{
+					const int end = (s_gmMonsterScanIndex + s_gmMonsterScanBatch > s_gmMonsterScanTotal) ? s_gmMonsterScanTotal : (s_gmMonsterScanIndex + s_gmMonsterScanBatch);
+					for (int i = s_gmMonsterScanIndex; i < end; ++i)
+					{
+						const int modelType = mons[i].RenderIndex;
+						if (!gmIsModelReady(modelType))
+							s_gmMonsterIssuesMissingModel++;
+					}
+					s_gmMonsterScanIndex = end;
+					if (s_gmMonsterScanIndex >= s_gmMonsterScanTotal)
+					{
+						s_gmMonsterScanActive = false;
+					}
+				}
 			}
 		}
 		ImGui::EndChild();
@@ -570,50 +924,203 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 		return;
 	}
 
-	if (previewRectValid && selectedItem != -1 && m_bPreviewModelOk)
+	if (previewRectValid)
 	{
-		Script_Item* item_info = GMItemMng->find(selectedItem);
+		g_GMMenuPreviewAutoRotate = s_previewAutoRotate;
+		g_GMMenuPreviewRotateY = s_previewRotY;
 
-		if (item_info->Name[0] != '\0')
+		const float previewX = s_previewRectMin.x / g_fScreenRate_x;
+		const float previewY = s_previewRectMin.y / g_fScreenRate_y;
+		const float previewW = (s_previewRectMax.x - s_previewRectMin.x) / g_fScreenRate_x;
+		const float previewH = (s_previewRectMax.y - s_previewRectMin.y) / g_fScreenRate_y;
+
+		if (s_gmMenuActiveTab == 0)
 		{
-			g_GMMenuPreviewAutoRotate = s_previewAutoRotate;
-			g_GMMenuPreviewRotateY = s_previewRotY;
+			if (selectedItem != -1 && m_bPreviewModelOk)
+			{
+				Script_Item* item_info = GMItemMng->find(selectedItem);
+				if (item_info && item_info->Name[0] != '\0')
+				{
+					const float boxW = previewW * 0.85f;
+					const float boxH = previewH * 0.85f;
+					const float sx = previewX + ((previewW - boxW) * 0.5f);
+					const float sy = previewY + ((previewH - boxH) * 0.5f);
 
-			const float previewX = s_previewRectMin.x / g_fScreenRate_x;
-			const float previewY = s_previewRectMin.y / g_fScreenRate_y;
-			const float previewW = (s_previewRectMax.x - s_previewRectMin.x) / g_fScreenRate_x;
-			const float previewH = (s_previewRectMax.y - s_previewRectMin.y) / g_fScreenRate_y;
-
-			const float boxW = previewW * 0.85f;
-			const float boxH = previewH * 0.85f;
-			const float sx = previewX + ((previewW - boxW) * 0.5f);
-			const float sy = previewY + ((previewH - boxH) * 0.5f);
-
-			SEASON3B::begin3D();
-			g_GMMenuPreviewActive = true;
-			RenderItem3D(
-				sx,
-				sy,
-				boxW,
-				boxH,
-				selectedItem,
-				(m_SpawnLevel << 3),
-				0,
-				0,
-				false,
-				previewX,
-				previewY,
-				previewW,
-				previewH,
-				0.0f);
-			g_GMMenuPreviewActive = false;
-			SEASON3B::endrender3D();
+					SEASON3B::begin3D();
+					g_GMMenuPreviewActive = true;
+					RenderItem3D(
+						sx,
+						sy,
+						boxW,
+						boxH,
+						selectedItem,
+						(m_SpawnLevel << 3),
+						0,
+						0,
+						false,
+						previewX,
+						previewY,
+						previewW,
+						previewH,
+						0.0f);
+					g_GMMenuPreviewActive = false;
+					SEASON3B::endrender3D();
+				}
+			}
+		}
+		else
+		{
+			if (s_gmSelectedMonsterIndex != -1 && s_gmMonsterPreviewOk && s_gmMonsterPreviewRenderIndex != -1)
+			{
+				const float rotY = s_previewAutoRotate ? s_previewRotY : 0.0f;
+				SEASON3B::begin3D();
+				g_GMMenuPreviewActive = true;
+				gmRenderMonsterPreview3D(
+					s_gmSelectedMonsterIndex,
+					s_gmMonsterPreviewRenderIndex,
+					s_gmMonsterPreviewKind,
+					s_gmMonsterPreviewScale,
+					rotY,
+					previewX,
+					previewY,
+					previewW,
+					previewH);
+				g_GMMenuPreviewActive = false;
+				SEASON3B::endrender3D();
+			}
 		}
 	}
 }
 
 void SEASON3B::CGFxEffectHandle::RenderContents()
 {
+	if (s_gmMenuActiveTab != 0)
+	{
+		s_gmMonsterPreviewOk = false;
+		s_gmMonsterPreviewRenderIndex = -1;
+		s_gmMonsterPreviewScale = 1.0f;
+
+		static char s_monFilter[64] = { 0 };
+		static int s_monSpawnCount = 1;
+		static char s_monSpawnCommand[32] = "/summon";
+
+		ImGui::BeginChild("MonList", ImVec2((220 * g_fScreenRate_x), 0), ImGuiChildFlags_Border);
+		ImGui::InputText("Filter", s_monFilter, sizeof(s_monFilter));
+
+		const type_monster& mons = GMMonsterMng->GetAll();
+		std::vector<int> viewMonsterIndices;
+		std::vector<std::string> viewLabels;
+		viewMonsterIndices.reserve(mons.size());
+		viewLabels.reserve(mons.size());
+
+		for (size_t i = 0; i < mons.size(); ++i)
+		{
+			const CUSTOM_MONSTER_INFO& m = mons[i];
+			char label[160] = { 0 };
+			const char* name = (m.Name[0] != '\0') ? m.Name : "Unnamed";
+			const char* kind = (m.Kind == KIND_NPC) ? "NPC" : "MON";
+			sprintf_s(label, "%d [%s] %s", m.monsterIndex, kind, name);
+
+			if (!gmStrCaseContains(label, s_monFilter))
+				continue;
+
+			viewMonsterIndices.push_back(m.monsterIndex);
+			viewLabels.emplace_back(label);
+		}
+
+		std::vector<const char*> viewLabelPtrs;
+		viewLabelPtrs.reserve(viewLabels.size());
+		for (size_t i = 0; i < viewLabels.size(); ++i)
+			viewLabelPtrs.push_back(viewLabels[i].c_str());
+
+		int selectedRow = -1;
+		for (size_t i = 0; i < viewMonsterIndices.size(); ++i)
+		{
+			if (viewMonsterIndices[i] == s_gmSelectedMonsterIndex)
+			{
+				selectedRow = (int)i;
+				break;
+			}
+		}
+
+		if (!viewLabelPtrs.empty())
+		{
+			if (selectedRow < 0)
+				selectedRow = 0;
+			if (ImGui::ListBox("##monsters_list", &selectedRow, viewLabelPtrs.data(), (int)viewLabelPtrs.size(), 16))
+			{
+				if (selectedRow >= 0 && selectedRow < (int)viewMonsterIndices.size())
+					s_gmSelectedMonsterIndex = viewMonsterIndices[selectedRow];
+			}
+		}
+		else
+		{
+			ImGui::Text("No results");
+		}
+
+		ImGui::EndChild();
+
+		ImGui::SameLine();
+		ImGui::BeginChild("MonDetails", ImVec2(0, 0), ImGuiChildFlags_Border);
+
+		if (s_gmSelectedMonsterIndex == -1)
+		{
+			ImGui::Text("Select a monster or NPC");
+		}
+		else
+		{
+			CUSTOM_MONSTER_INFO* m = GMMonsterMng->FindMonsterByIndex(s_gmSelectedMonsterIndex);
+			if (m == 0)
+			{
+				ImGui::Text("Not found: %d", s_gmSelectedMonsterIndex);
+			}
+			else
+			{
+				const char* kind = (m->Kind == KIND_NPC) ? "NPC" : "MONSTER";
+				ImGui::Text("Index: %d", m->monsterIndex);
+				ImGui::Text("Kind: %s", kind);
+				ImGui::Text("RenderIndex: %d", m->RenderIndex);
+				ImGui::Text("Scale: %.2f", m->fSize);
+				ImGui::Text("Name: %s", (m->Name[0] != '\0') ? m->Name : "Unnamed");
+
+				const bool ok = gmIsModelReady(m->RenderIndex);
+				s_gmMonsterPreviewOk = ok;
+				s_gmMonsterPreviewRenderIndex = ok ? m->RenderIndex : -1;
+				s_gmMonsterPreviewScale = m->fSize;
+				s_gmMonsterPreviewKind = m->Kind;
+
+				if (!ok)
+					ImGui::Text("Model: missing");
+				else
+					ImGui::Text("Model: OK");
+
+				ImGui::Separator();
+
+				ImGui::InputText("Command", s_monSpawnCommand, sizeof(s_monSpawnCommand));
+				if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+					ImGui::SetTooltip("Example: /summon");
+
+				ImGui::InputInt("Count", &s_monSpawnCount);
+				if (s_monSpawnCount < 1) s_monSpawnCount = 1;
+				if (s_monSpawnCount > 100) s_monSpawnCount = 100;
+
+				if (ImGui::Button("Spawn"))
+				{
+					char cmd[128] = { 0 };
+					const char* prefix = (s_monSpawnCommand[0] != '\0') ? s_monSpawnCommand : "/summon";
+					if (prefix[0] == '/')
+						sprintf_s(cmd, "%s %d %d", prefix, m->monsterIndex, s_monSpawnCount);
+					else
+						sprintf_s(cmd, "/%s %d %d", prefix, m->monsterIndex, s_monSpawnCount);
+					gmSendChatRaw(cmd);
+				}
+			}
+		}
+
+		ImGui::EndChild();
+		return;
+	}
+
 	SyncItemIndexFromSectionType();
 
 	m_bPreviewModelOk = false;
