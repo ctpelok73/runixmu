@@ -8,6 +8,7 @@
 #include "ZzzCharacter.h"
 #include "ZzzOpenData.h"
 #include "ZzzOpenglUtil.h"
+#include "ZzzInterface.h"
 #include "SocketSystem.h"
 #include "CGMMonsterMng.h"
 #include "supportingfeature.h"
@@ -184,8 +185,14 @@ static bool s_gmMonsterDbRequested = false;
 static bool s_gmMonsterPreviewOk = false;
 static int s_gmMonsterPreviewRenderIndex = -1;
 static float s_gmMonsterPreviewScale = 1.0f;
+static float s_gmMonsterPreviewFill = 0.80f;
 static int s_gmMonsterPreviewKind = KIND_MONSTER;
 static int s_gmMonsterPreviewAction = -1;
+static float s_gmMonsterLastSize = 0.0f;
+static float s_gmMonsterLastDist = 0.0f;
+static float s_gmMonsterLastDistNeeded = 0.0f;
+static float s_gmMonsterLastFillUsed = 0.0f;
+static int s_gmMonsterLastModelType = -1;
 
 static bool s_gmMonsterScanActive = false;
 static int s_gmMonsterScanIndex = 0;
@@ -296,6 +303,28 @@ static bool gmCalcObjectSafe(OBJECT* o, bool translate, int select, int extraMon
 	}
 }
 
+static int gmInferMonsterKind(int Type);
+
+static bool gmFileExistsA(const char* path)
+{
+	if (path == 0 || path[0] == '\0')
+		return false;
+	const DWORD attr = GetFileAttributesA(path);
+	if (attr == INVALID_FILE_ATTRIBUTES)
+		return false;
+	return (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+static bool gmMonsterBmdExists(int monsterIndex)
+{
+	if (monsterIndex < 0 || monsterIndex >= MAX_MODEL_MONSTER)
+		return false;
+
+	char path[MAX_PATH] = { 0 };
+	sprintf_s(path, "Data\\Monster\\Monster%02d.bmd", monsterIndex + 1);
+	return gmFileExistsA(path);
+}
+
 static void gmRenderMonsterPreview3D(int monsterIndex, float scaleMul, float rotY, float previewX, float previewY, float previewW, float previewH, int actionOverride)
 {
 	const float centerX = previewX + (previewW * 0.5f);
@@ -309,6 +338,22 @@ static void gmRenderMonsterPreview3D(int monsterIndex, float scaleMul, float rot
 	if (clipW <= 0 || clipH <= 0)
 		return;
 
+	s_gmMonsterLastSize = 0.0f;
+	s_gmMonsterLastDist = 0.0f;
+	s_gmMonsterLastDistNeeded = 0.0f;
+	s_gmMonsterLastFillUsed = 0.0f;
+	s_gmMonsterLastModelType = -1;
+
+	const int inferredKind = gmInferMonsterKind(monsterIndex);
+	CUSTOM_MONSTER_INFO* customInfo = GMMonsterMng ? GMMonsterMng->FindMonsterByIndex(monsterIndex) : 0;
+	if (customInfo && customInfo->RenderIndex < 0 && customInfo->isUsable())
+	{
+		customInfo->OpenLoad();
+	}
+	const bool isCustom = (customInfo != 0);
+	if (!isCustom && inferredKind != KIND_NPC && !gmMonsterBmdExists(monsterIndex))
+		return;
+
 	const GLboolean oldScissorEnabled = glIsEnabled(GL_SCISSOR_TEST);
 	GLint oldScissorBox[4] = { 0, 0, 0, 0 };
 	glGetIntegerv(GL_SCISSOR_BOX, oldScissorBox);
@@ -317,11 +362,13 @@ static void gmRenderMonsterPreview3D(int monsterIndex, float scaleMul, float rot
 	glEnable(GL_SCISSOR_TEST);
 	glScissor(clipX, clipY, clipW, clipH);
 
+	const float fovDeg = 12.0f;
+
 	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
 	glLoadIdentity();
 	glViewport2(clipX, clipYTop, clipW, clipH);
-	gluPerspective2(1.f, (float)(clipW) / (float)(clipH), RENDER_ITEMVIEW_NEAR, RENDER_ITEMVIEW_FAR);
+	gluPerspective2(fovDeg, (float)(clipW) / (float)(clipH), RENDER_ITEMVIEW_NEAR, RENDER_ITEMVIEW_FAR);
 
 	glMatrixMode(GL_MODELVIEW);
 	glPushMatrix();
@@ -364,14 +411,15 @@ static void gmRenderMonsterPreview3D(int monsterIndex, float scaleMul, float rot
 	OBJECT* o = &c->Object;
 	const int modelType = o->Type;
 	const int kind = o->Kind;
+	s_gmMonsterLastModelType = modelType;
 
 	VectorSubtract(target, MousePosition, direction);
-	const float distFactor = (modelType >= MODEL_MONSTER_DUMY_BENGI) ? 0.18f : 0.08f;
+	const float distFactor = (modelType >= MODEL_MONSTER_DUMY_BENGI) ? 0.30f : 0.18f;
 	VectorMA(MousePosition, (float)ScaleMA(distFactor), direction, position);
 
 	if (!gmIsModelReady(modelType))
 	{
-		if (monsterIndex >= 0 && monsterIndex < MAX_MODEL_MONSTER)
+		if (monsterIndex >= 0 && monsterIndex < MAX_MODEL_MONSTER && gmMonsterBmdExists(monsterIndex))
 		{
 			OpenMonsterModel(monsterIndex);
 		}
@@ -432,25 +480,51 @@ static void gmRenderMonsterPreview3D(int monsterIndex, float scaleMul, float rot
 		o->CurrentAction = act;
 		o->PriorAction = act;
 	}
-	if (pModel && gmCalcObjectSafe(o, true, 0, 0) && pModel->fTransformedSize > 0.0f)
+	else if (actionOverride < 0 && pModel && pModel->NumActions > 0)
 	{
+		const int act = gmFindSafeActionIndex(modelType);
+		o->CurrentAction = act;
+		o->PriorAction = act;
+	}
+	if (pModel)
+	{
+		const int oldEditFlag = EditFlag;
+		EditFlag = 2;
+		gmCalcObjectSafe(o, true, 0, 0);
+		EditFlag = oldEditFlag;
+
 		vec3_t camToObj;
 		VectorSubtract(o->Position, MousePosition, camToObj);
 		const float dist = VectorLength(camToObj);
 
-		if (dist > 0.0f)
+		float fill = s_gmMonsterPreviewFill;
+		if (fill < 0.45f) fill = 0.45f;
+		if (fill > 0.95f) fill = 0.95f;
+
+		s_gmMonsterLastFillUsed = fill;
+		s_gmMonsterLastSize = pModel->fTransformedSize;
+		s_gmMonsterLastDist = dist;
+
+		if (pModel->fTransformedSize > 0.0f && dist > 0.0f)
 		{
-			const float fovRad = 1.0f * (Q_PI / 180.f);
+			const float fovRad = fovDeg * (Q_PI / 180.f);
 			const float focal = ((float)clipH * 0.5f) / tanf(fovRad * 0.5f);
-			const float targetPixels = (float)((clipW < clipH) ? clipW : clipH) * 0.92f;
+			const float targetPixels = (float)((clipW < clipH) ? clipW : clipH) * fill;
 			const float currentPixels = focal * pModel->fTransformedSize / dist;
 
 			if (currentPixels > 0.0f && targetPixels > 0.0f)
 			{
-				float mul = targetPixels / currentPixels;
-				if (mul < 0.05f) mul = 0.05f;
-				if (mul > 4.00f) mul = 4.00f;
-				o->Scale = renderScale * mul;
+				const float distNeeded = focal * pModel->fTransformedSize / targetPixels;
+				s_gmMonsterLastDistNeeded = distNeeded;
+				const float dirScale = distNeeded / dist;
+				float distScale = dirScale;
+				if (distScale < 0.05f) distScale = 0.05f;
+				if (distScale > 200.00f) distScale = 200.00f;
+
+				vec3_t newPos;
+				VectorMA(MousePosition, distScale, camToObj, newPos);
+				VectorCopy(newPos, o->Position);
+				VectorCopy(newPos, o->StartPosition);
 			}
 		}
 	}
@@ -601,7 +675,19 @@ static void gmUpdateMonsterPreviewState(int monsterIndex)
 {
 	s_gmMonsterPreviewOk = false;
 	s_gmMonsterPreviewRenderIndex = -1;
-	s_gmMonsterPreviewKind = KIND_MONSTER;
+	s_gmMonsterPreviewKind = gmInferMonsterKind(monsterIndex);
+
+	CUSTOM_MONSTER_INFO* customInfo = GMMonsterMng ? GMMonsterMng->FindMonsterByIndex(monsterIndex) : 0;
+	if (customInfo && customInfo->RenderIndex < 0 && customInfo->isUsable())
+	{
+		customInfo->OpenLoad();
+	}
+	const bool isCustom = (customInfo != 0);
+
+	if (!isCustom && s_gmMonsterPreviewKind != KIND_NPC && !gmMonsterBmdExists(monsterIndex))
+	{
+		return;
+	}
 
 	static const int s_gmPreviewCharacterKey = 0x6F01;
 	DeleteCharacter(s_gmPreviewCharacterKey);
@@ -618,7 +704,7 @@ static void gmUpdateMonsterPreviewState(int monsterIndex)
 
 	if (!gmIsModelReady(modelType))
 	{
-		if (monsterIndex >= 0 && monsterIndex < MAX_MODEL_MONSTER)
+		if (monsterIndex >= 0 && monsterIndex < MAX_MODEL_MONSTER && gmMonsterBmdExists(monsterIndex))
 		{
 			OpenMonsterModel(monsterIndex);
 		}
@@ -797,6 +883,26 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 					{
 						const int monsterIndex = db[i].Index;
 						const char* name = (db[i].Name[0] != '\0') ? db[i].Name : "Unnamed";
+						const int inferredKind = gmInferMonsterKind(monsterIndex);
+						CUSTOM_MONSTER_INFO* customInfo = GMMonsterMng ? GMMonsterMng->FindMonsterByIndex(monsterIndex) : 0;
+						if (customInfo && customInfo->RenderIndex < 0 && customInfo->isUsable())
+						{
+							customInfo->OpenLoad();
+						}
+						const bool isCustom = (customInfo != 0);
+
+						if (!isCustom && inferredKind != KIND_NPC && !gmMonsterBmdExists(monsterIndex))
+						{
+							s_gmMonsterIssuesMissingModel++;
+							sprintf_s(s_gmMonsterLastIssue, "BMD missing: idx=%d kind=%s name=%s", monsterIndex, gmKindLabel(inferredKind), name);
+							if (!s_gmMonsterReportInit)
+							{
+								g_ErrorReport.Create("GMMenu_MonsterAudit.log");
+								s_gmMonsterReportInit = true;
+							}
+							g_ErrorReport.Write("[GMMenu] BMD missing: idx=%d kind=%d name=%s\r\n", monsterIndex, inferredKind, name);
+							continue;
+						}
 
 						static const int s_gmScanCharacterKey = 0x6F02;
 						DeleteCharacter(s_gmScanCharacterKey);
@@ -821,7 +927,7 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 
 						if (!gmIsModelReady(modelType))
 						{
-							if (monsterIndex >= 0 && monsterIndex < MAX_MODEL_MONSTER)
+							if (monsterIndex >= 0 && monsterIndex < MAX_MODEL_MONSTER && gmMonsterBmdExists(monsterIndex))
 								OpenMonsterModel(monsterIndex);
 							if (kind == KIND_NPC)
 								OpenNpc(modelType);
@@ -1112,6 +1218,7 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 					s_gmSelectedMonsterRow = rowIndex;
 					s_gmSelectedMonsterIndex = m.Index;
 					s_gmMonsterPreviewScale = 1.0f;
+					s_gmMonsterPreviewFill = 0.80f;
 					s_gmMonsterPreviewAction = -1;
 					gmUpdateMonsterPreviewState(m.Index);
 				}
@@ -1159,12 +1266,18 @@ void SEASON3B::CGFxEffectHandle::RenderContents()
 
 			ImGui::Text("Preview: %s", s_gmMonsterPreviewOk ? "OK" : "Missing");
 			ImGui::Text("ModelId: %d", s_gmMonsterPreviewRenderIndex);
+			if (s_gmMonsterLastModelType >= 0)
+			{
+				ImGui::Text("PreviewModel: %d", s_gmMonsterLastModelType);
+				ImGui::Text("Fit: size=%.2f dist=%.2f need=%.2f fill=%.2f", s_gmMonsterLastSize, s_gmMonsterLastDist, s_gmMonsterLastDistNeeded, s_gmMonsterLastFillUsed);
+			}
 			if (ImGui::Button("Refresh preview state"))
 			{
 				gmUpdateMonsterPreviewState(m.Index);
 			}
 
-			ImGui::SliderFloat("Scale", &s_gmMonsterPreviewScale, 0.25f, 3.0f, "%.2f");
+			ImGui::SliderFloat("Scale", &s_gmMonsterPreviewScale, 0.05f, 3.0f, "%.2f");
+			ImGui::SliderFloat("Fill", &s_gmMonsterPreviewFill, 0.45f, 0.95f, "%.2f");
 
 			BMD* pModel = (gmClientModels && s_gmMonsterPreviewRenderIndex >= 0) ? gmClientModels->GetModel(s_gmMonsterPreviewRenderIndex) : 0;
 			const int actionCount = (pModel != 0) ? pModel->NumActions : 0;
