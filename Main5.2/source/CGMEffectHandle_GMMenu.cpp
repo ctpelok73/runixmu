@@ -363,12 +363,14 @@ static void gmRenderMonsterPreview3D(int monsterIndex, float scaleMul, float rot
 	glScissor(clipX, clipY, clipW, clipH);
 
 	const float fovDeg = 12.0f;
+	const float previewNear = 1.0f;
+	const float previewFar = 20000.0f;
 
 	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
 	glLoadIdentity();
 	glViewport2(clipX, clipYTop, clipW, clipH);
-	gluPerspective2(fovDeg, (float)(clipW) / (float)(clipH), RENDER_ITEMVIEW_NEAR, RENDER_ITEMVIEW_FAR);
+	gluPerspective2(fovDeg, (float)(clipW) / (float)(clipH), previewNear, previewFar);
 
 	glMatrixMode(GL_MODELVIEW);
 	glPushMatrix();
@@ -493,9 +495,27 @@ static void gmRenderMonsterPreview3D(int monsterIndex, float scaleMul, float rot
 		gmCalcObjectSafe(o, true, 0, 0);
 		EditFlag = oldEditFlag;
 
-		vec3_t camToObj;
-		VectorSubtract(o->Position, MousePosition, camToObj);
-		const float dist = VectorLength(camToObj);
+		vec3_t centerDelta;
+		Vector(0.0f, 0.0f, 0.0f, centerDelta);
+		{
+			const float dx = o->OBB.XAxis[0];
+			const float dy = o->OBB.YAxis[1];
+			const float dz = o->OBB.ZAxis[2];
+			if (dx > 0.0f && dy > 0.0f && dz > 0.0f)
+			{
+				vec3_t bbCenter;
+				bbCenter[0] = o->OBB.StartPos[0] + dx * 0.5f;
+				bbCenter[1] = o->OBB.StartPos[1] + dy * 0.5f;
+				bbCenter[2] = o->OBB.StartPos[2] + dz * 0.5f;
+				VectorSubtract(bbCenter, o->Position, centerDelta);
+			}
+		}
+
+		vec3_t centerPos;
+		VectorAdd(o->Position, centerDelta, centerPos);
+		vec3_t camToCenter;
+		VectorSubtract(centerPos, MousePosition, camToCenter);
+		const float dist = VectorLength(camToCenter);
 
 		float fill = s_gmMonsterPreviewFill;
 		if (fill < 0.45f) fill = 0.45f;
@@ -510,21 +530,43 @@ static void gmRenderMonsterPreview3D(int monsterIndex, float scaleMul, float rot
 			const float fovRad = fovDeg * (Q_PI / 180.f);
 			const float focal = ((float)clipH * 0.5f) / tanf(fovRad * 0.5f);
 			const float targetPixels = (float)((clipW < clipH) ? clipW : clipH) * fill;
-			const float currentPixels = focal * pModel->fTransformedSize / dist;
+			float sizeForFit = pModel->fTransformedSize * 1.73f;
+			{
+				const float dx = o->OBB.XAxis[0];
+				const float dy = o->OBB.YAxis[1];
+				const float dz = o->OBB.ZAxis[2];
+				if (dx > 0.0f && dy > 0.0f && dz > 0.0f)
+				{
+					const float diag = sqrtf(dx * dx + dy * dy + dz * dz);
+					if (diag > 0.0f)
+						sizeForFit = diag;
+				}
+			}
+			const float currentPixels = focal * sizeForFit / dist;
 
 			if (currentPixels > 0.0f && targetPixels > 0.0f)
 			{
-				const float distNeeded = focal * pModel->fTransformedSize / targetPixels;
+				float distNeeded = focal * sizeForFit / targetPixels;
+				const float radius = sizeForFit * 0.5f;
+				const float minDist = radius + previewNear;
+				const float maxDist = previewFar - radius - previewNear;
+				if (distNeeded < minDist)
+					distNeeded = minDist;
+				if (maxDist > minDist && distNeeded > maxDist)
+					distNeeded = maxDist;
+
 				s_gmMonsterLastDistNeeded = distNeeded;
 				const float dirScale = distNeeded / dist;
 				float distScale = dirScale;
 				if (distScale < 0.05f) distScale = 0.05f;
-				if (distScale > 200.00f) distScale = 200.00f;
+				if (distScale > 2000.00f) distScale = 2000.00f;
 
-				vec3_t newPos;
-				VectorMA(MousePosition, distScale, camToObj, newPos);
-				VectorCopy(newPos, o->Position);
-				VectorCopy(newPos, o->StartPosition);
+				vec3_t newCenter;
+				VectorMA(MousePosition, distScale, camToCenter, newCenter);
+				vec3_t newOrigin;
+				VectorSubtract(newCenter, centerDelta, newOrigin);
+				VectorCopy(newOrigin, o->Position);
+				VectorCopy(newOrigin, o->StartPosition);
 			}
 		}
 	}
