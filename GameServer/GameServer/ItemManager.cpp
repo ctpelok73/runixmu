@@ -550,7 +550,7 @@ void CItemManager::ExportModel(char* filename)
 		std::vector<Script_Item> ItemMemory;
 
 		char temp[128]; // Buffer temporal para cada campo
-		char buffer[512]; // Tamaño suficiente para una línea completa
+		char buffer[512]; // Tamaï¿½o suficiente para una lï¿½nea completa
 
 		for (type_map_item::iterator it = m_ItemInfo.begin(); it != m_ItemInfo.end(); ++it)
 		{
@@ -4874,6 +4874,28 @@ void CItemManager::CGItemMoveRecv(PMSG_ITEM_MOVE_RECV* lpMsg, int aIndex) // OK
 		if (lpObj->Inventory[lpMsg->TargetSlot].m_IsPeriodicItem != 0)
 		{
 			gCashShop.GCCashShopPeriodicItemSend(aIndex, lpObj->Inventory[lpMsg->TargetSlot].m_Index, lpMsg->TargetSlot, lpObj->Inventory[lpMsg->TargetSlot].m_PeriodicItemTime);
+		}
+	}
+
+	if (pMsg.SubCode != 0xFF)
+	{
+		bool wearChanged = false;
+
+		if (lpMsg->SourceFlag == REQUEST_EQUIPMENT_INVENTORY && INVENTORY_WEAR_RANGE(lpMsg->SourceSlot) != 0)
+		{
+			wearChanged = true;
+		}
+
+		if (lpMsg->TargetFlag == REQUEST_EQUIPMENT_INVENTORY && INVENTORY_WEAR_RANGE(lpMsg->TargetSlot) != 0)
+		{
+			wearChanged = true;
+		}
+
+		if (wearChanged)
+		{
+			gObjectManager.CharacterCalcAttribute(aIndex);
+			gObjectManager.CharacterMakePreviewCharSet(aIndex);
+			this->GCItemEquipmentSend(aIndex);
 		}
 	}
 }
