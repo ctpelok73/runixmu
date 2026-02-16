@@ -1268,21 +1268,19 @@ int SEASON3B::CNewUIMainFrameWindow::RenderExperience(float x, float y, float wi
 	}
 	iExp = (int)fExpBarNum;
 
-	RenderBitmap(textureExp, x, y, width, height, 0.0, 0.0, 0.75, 1.0, true, true, 0.0);
-
 	EnableAlphaTest(true);
 #if MAIN_UPDATE > 603
-	SEASON3B::RenderNumber(x + width + 7, y - 1, iExp, 0.7);
+	SEASON3B::RenderNumber(x + (width * 0.75f) + 7, y - 1, iExp, 0.7);
 #else
 	if (gmProtect->checkold_school())
 	{
 		glColor3f(0.91000003, 0.81, 0.60000002);
-		SEASON3B::RenderNumber(pos_center() + 425.0, pos_botton() + 434.0, iExp, 1.f);
+		SEASON3B::RenderNumber(x + (width * 0.75f) + 7, y - 1, iExp, 1.f);
 		glColor3f(1.0, 1.0, 1.0);
 	}
 	else
 	{
-		SEASON3B::RenderNumber(pos_center() + 635.0, pos_botton() + 469.0, iExp, 1.f);
+		SEASON3B::RenderNumber(x + (width * 0.75f) + 7, y - 1, iExp, 1.f);
 	}
 #endif
 
@@ -1781,7 +1779,7 @@ void SEASON3B::CNewUIMainFrameWindow::RenderExperiencedown()
 
 	EnableAlphaTest(true);
 	glColor3f(0.91000003, 0.81, 0.60000002);
-	SEASON3B::RenderNumber(RenderFrameX + 239, RenderFrameY - 4, iExp, 0.8);
+	SEASON3B::RenderNumber((float)RenderFrameX + ((float)ExpBar * 0.75f) + 7, (float)RenderFrameY - 4, iExp, 0.8);
 	DisableAlphaBlend();
 	glColor3f(1.0, 1.0, 1.0);
 
