@@ -1,191 +1,500 @@
 #include "stdafx.h"
 #include "CShaderGL.h"
 
-#ifdef SHADER_VERSION_TEST
+#include <cmath>
+
 #include "Utilities/Log/muConsoleDebug.h"
 
-CShaderGL::CShaderGL()
+namespace
 {
-	shader_id = 0;
+	const char* kVertexShader120 = R"GLSL(
+#version 120
+
+attribute vec3 aPos;
+attribute vec2 aUV;
+attribute vec4 aColor;
+
+uniform mat4 uMVP;
+
+varying vec2 vUV;
+varying vec4 vColor;
+varying float vFogCoord;
+
+void main()
+{
+	gl_Position = uMVP * vec4(aPos, 1.0);
+	vUV = aUV;
+	vColor = aColor;
+	vec4 eyePos = gl_ModelViewMatrix * vec4(aPos, 1.0);
+	vFogCoord = length(eyePos.xyz);
+}
+)GLSL";
+
+	const char* kFragmentShader120 = R"GLSL(
+#version 120
+
+uniform sampler2D uTex;
+uniform int uUseTex;
+uniform int uAlphaTest;
+uniform float uAlphaRef;
+uniform vec4 uColorMul;
+uniform int uFogEnable;
+
+varying vec2 vUV;
+varying vec4 vColor;
+varying float vFogCoord;
+
+void main()
+{
+	vec4 tex = (uUseTex != 0) ? texture2D(uTex, vUV) : vec4(1.0);
+	vec4 outColor = tex * vColor;
+	outColor *= uColorMul;
+	if (uAlphaTest != 0)
+	{
+		if (outColor.a <= uAlphaRef)
+		{
+			discard;
+		}
+	}
+	if (uFogEnable != 0)
+	{
+		float fogFactor = clamp((gl_Fog.end - vFogCoord) * gl_Fog.scale, 0.0, 1.0);
+		outColor.rgb = mix(gl_Fog.color.rgb, outColor.rgb, fogFactor);
+	}
+	outColor = clamp(outColor, 0.0, 1.0);
+	gl_FragColor = outColor;
+}
+)GLSL";
+
+	inline float DegToRad(float deg)
+	{
+		return deg * 3.14159265358979323846f / 180.0f;
+	}
+}
+
+CShaderGL::CShaderGL()
+	: m_programId(0),
+	  m_uMvpLoc(-1),
+	  m_uTexLoc(-1),
+	  m_uUseTexLoc(-1),
+	  m_uAlphaTestLoc(-1),
+	  m_uAlphaRefLoc(-1),
+	  m_uColorMulLoc(-1),
+	  m_uFogEnableLoc(-1),
+	  m_dirtyMvp(true)
+{
+	Mat4Identity(m_projection);
+	Mat4Identity(m_view);
+	Mat4Identity(m_mvp);
 }
 
 CShaderGL::~CShaderGL()
 {
-	glDeleteProgram(shader_id);
+	Shutdown();
 }
 
 void CShaderGL::Init()
 {
-	std::string vertex_shader;
-
-	if (!readshader("Shaders\\shader.vs", vertex_shader))
+	if (m_programId != 0)
 	{
 		return;
 	}
 
-	std::string frgmen_shader;
+	std::string vsError;
+	std::string fsError;
+	std::string linkError;
 
-	if (!readshader("Shaders\\shader.fs", frgmen_shader))
+	const GLuint vs = CompileShader(GL_VERTEX_SHADER, kVertexShader120, &vsError);
+	const GLuint fs = CompileShader(GL_FRAGMENT_SHADER, kFragmentShader120, &fsError);
+
+	if (vs == 0 || fs == 0)
+	{
+		if (!vsError.empty()) g_ConsoleDebug->Write(5, vsError.c_str());
+		if (!fsError.empty()) g_ConsoleDebug->Write(5, fsError.c_str());
+		if (vs) glDeleteShader(vs);
+		if (fs) glDeleteShader(fs);
+		return;
+	}
+
+	m_programId = LinkProgram(vs, fs, &linkError);
+	glDeleteShader(vs);
+	glDeleteShader(fs);
+
+	if (m_programId == 0)
+	{
+		if (!linkError.empty()) g_ConsoleDebug->Write(5, linkError.c_str());
+		return;
+	}
+
+	m_uMvpLoc = glGetUniformLocation(m_programId, "uMVP");
+	m_uTexLoc = glGetUniformLocation(m_programId, "uTex");
+	m_uUseTexLoc = glGetUniformLocation(m_programId, "uUseTex");
+	m_uAlphaTestLoc = glGetUniformLocation(m_programId, "uAlphaTest");
+	m_uAlphaRefLoc = glGetUniformLocation(m_programId, "uAlphaRef");
+	m_uColorMulLoc = glGetUniformLocation(m_programId, "uColorMul");
+	m_uFogEnableLoc = glGetUniformLocation(m_programId, "uFogEnable");
+
+	glUseProgram(m_programId);
+	if (m_uTexLoc >= 0)
+	{
+		glUniform1i(m_uTexLoc, 0);
+	}
+	if (m_uUseTexLoc >= 0)
+	{
+		glUniform1i(m_uUseTexLoc, 1);
+	}
+	if (m_uAlphaTestLoc >= 0)
+	{
+		glUniform1i(m_uAlphaTestLoc, 0);
+	}
+	if (m_uAlphaRefLoc >= 0)
+	{
+		glUniform1f(m_uAlphaRefLoc, 0.25f);
+	}
+	if (m_uColorMulLoc >= 0)
+	{
+		glUniform4f(m_uColorMulLoc, 1.0f, 1.0f, 1.0f, 1.0f);
+	}
+	if (m_uFogEnableLoc >= 0)
+	{
+		glUniform1i(m_uFogEnableLoc, 0);
+	}
+	glUseProgram(0);
+}
+
+void CShaderGL::Shutdown()
+{
+	if (m_programId != 0)
+	{
+		glDeleteProgram(m_programId);
+		m_programId = 0;
+	}
+
+	m_uMvpLoc = -1;
+	m_uTexLoc = -1;
+	m_uUseTexLoc = -1;
+	m_uAlphaTestLoc = -1;
+	m_uAlphaRefLoc = -1;
+	m_uColorMulLoc = -1;
+	m_uFogEnableLoc = -1;
+	m_dirtyMvp = true;
+}
+
+bool CShaderGL::IsReady() const
+{
+	return m_programId != 0;
+}
+
+GLuint CShaderGL::GetProgramId() const
+{
+	return m_programId;
+}
+
+void CShaderGL::Use()
+{
+	if (m_programId != 0)
+	{
+		glUseProgram(m_programId);
+	}
+}
+
+void CShaderGL::Unuse()
+{
+	glUseProgram(0);
+}
+
+void CShaderGL::SetPerspective(float fovDeg, float aspect, float zNear, float zFar)
+{
+	Mat4Perspective(m_projection, fovDeg, aspect, zNear, zFar);
+	m_dirtyMvp = true;
+}
+
+void CShaderGL::SetViewFromCamera(const float* cameraPosition3, const float* cameraAngle3, bool cameraTopViewEnable)
+{
+	Mat4Identity(m_view);
+	Mat4RotateY(m_view, cameraAngle3[1]);
+	if (!cameraTopViewEnable)
+	{
+		Mat4RotateX(m_view, cameraAngle3[0]);
+	}
+	Mat4RotateZ(m_view, cameraAngle3[2]);
+	Mat4Translate(m_view, -cameraPosition3[0], -cameraPosition3[1], -cameraPosition3[2]);
+
+	m_dirtyMvp = true;
+}
+
+void CShaderGL::SetMVPFromOpenGL()
+{
+	if (m_programId == 0)
 	{
 		return;
 	}
 
-	GLuint shader_vertex = run_shader(vertex_shader.data(), GL_VERTEX_SHADER);
+	float proj[16];
+	float model[16];
+	glGetFloatv(GL_PROJECTION_MATRIX, proj);
+	glGetFloatv(GL_MODELVIEW_MATRIX, model);
 
-	GLuint shader_frgmen = run_shader(frgmen_shader.data(), GL_FRAGMENT_SHADER);
-
-	shader_id = glCreateProgram();
-	glAttachShader(shader_id, shader_vertex);
-	glAttachShader(shader_id, shader_frgmen);
-	glLinkProgram(shader_id);
-
-	int success;
-	glGetProgramiv(shader_id, GL_LINK_STATUS, &success);
-
-	if (!success)
-	{
-		char infoLog[512];
-		glGetProgramInfoLog(shader_id, 512, NULL, infoLog);
-		g_ConsoleDebug->Write(5, "Error al enlazar el Shader Program:");
-		g_ConsoleDebug->Write(5, infoLog);
-	}
-
-	// Eliminar los shaders compilados
-	glDeleteShader(shader_vertex);
-	glDeleteShader(shader_frgmen);
+	Mat4Multiply(m_mvp, proj, model);
+	m_dirtyMvp = false;
 }
 
-void CShaderGL::RenderShader()
+void CShaderGL::SetAlphaTestFromOpenGL()
 {
-	if (this->CheckedShader())
+	if (m_programId == 0)
 	{
-		glUseProgram(shader_id);
+		return;
+	}
+
+	const GLboolean enabled = glIsEnabled(GL_ALPHA_TEST);
+	if (m_uAlphaTestLoc >= 0)
+	{
+		glUniform1i(m_uAlphaTestLoc, enabled ? 1 : 0);
+	}
+
+	if (enabled && m_uAlphaRefLoc >= 0)
+	{
+		GLfloat ref = 0.0f;
+		glGetFloatv(GL_ALPHA_TEST_REF, &ref);
+		glUniform1f(m_uAlphaRefLoc, ref);
 	}
 }
 
-bool CShaderGL::CheckedShader()
+void CShaderGL::SetColorMulFromOpenGL()
 {
-	return (shader_id != 0);
-}
-
-GLuint CShaderGL::GetShaderId()
-{
-	return shader_id;
-}
-
-bool CShaderGL::readshader(const char* filename, std::string& shader_text)
-{
-	FILE* compressedFile = fopen(filename, "rb");
-
-	if (compressedFile)
+	if (m_programId == 0 || m_uColorMulLoc < 0)
 	{
-		fseek(compressedFile, 0, SEEK_END);
-		long fileSize = ftell(compressedFile);
-		fseek(compressedFile, 0, SEEK_SET);
-
-		shader_text.resize(fileSize, 0);
-		fread(shader_text.data(), 1, fileSize, compressedFile);
-		fclose(compressedFile);
-
-		return true;
+		return;
 	}
 
-	return false;
+	GLfloat c[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	glGetFloatv(GL_CURRENT_COLOR, c);
+	glUniform4f(m_uColorMulLoc, c[0], c[1], c[2], c[3]);
 }
 
-GLuint CShaderGL::run_shader(const char* shader_text, GLenum type)
+void CShaderGL::SetColorMulIdentity()
 {
-	GLuint shader = glCreateShader(type);
-	glShaderSource(shader, 1, &shader_text, NULL);
+	if (m_programId == 0 || m_uColorMulLoc < 0)
+	{
+		return;
+	}
+	glUniform4f(m_uColorMulLoc, 1.0f, 1.0f, 1.0f, 1.0f);
+}
+
+void CShaderGL::SetFogFromOpenGL()
+{
+	if (m_programId == 0 || m_uFogEnableLoc < 0)
+	{
+		return;
+	}
+
+	const GLboolean enabled = glIsEnabled(GL_FOG);
+	glUniform1i(m_uFogEnableLoc, enabled ? 1 : 0);
+}
+
+void CShaderGL::SetUseTexture(bool enable)
+{
+	if (m_programId == 0 || m_uUseTexLoc < 0)
+	{
+		return;
+	}
+
+	glUniform1i(m_uUseTexLoc, enable ? 1 : 0);
+}
+
+void CShaderGL::ApplyMVP()
+{
+	if (m_programId == 0)
+	{
+		return;
+	}
+
+	UpdateMVPIfDirty();
+
+	if (m_uMvpLoc >= 0)
+	{
+		glUniformMatrix4fv(m_uMvpLoc, 1, GL_FALSE, m_mvp);
+	}
+}
+
+void CShaderGL::Mat4Identity(float* out16)
+{
+	for (int i = 0; i < 16; i++)
+	{
+		out16[i] = 0.0f;
+	}
+	out16[0] = 1.0f;
+	out16[5] = 1.0f;
+	out16[10] = 1.0f;
+	out16[15] = 1.0f;
+}
+
+void CShaderGL::Mat4Multiply(float* out16, const float* a16, const float* b16)
+{
+	float r[16];
+	for (int col = 0; col < 4; col++)
+	{
+		for (int row = 0; row < 4; row++)
+		{
+			r[col * 4 + row] =
+				a16[0 * 4 + row] * b16[col * 4 + 0] +
+				a16[1 * 4 + row] * b16[col * 4 + 1] +
+				a16[2 * 4 + row] * b16[col * 4 + 2] +
+				a16[3 * 4 + row] * b16[col * 4 + 3];
+		}
+	}
+	for (int i = 0; i < 16; i++)
+	{
+		out16[i] = r[i];
+	}
+}
+
+void CShaderGL::Mat4Perspective(float* out16, float fovDeg, float aspect, float zNear, float zFar)
+{
+	const float f = 1.0f / std::tanf(DegToRad(fovDeg) * 0.5f);
+
+	for (int i = 0; i < 16; i++)
+	{
+		out16[i] = 0.0f;
+	}
+
+	out16[0] = f / aspect;
+	out16[5] = f;
+	out16[10] = (zFar + zNear) / (zNear - zFar);
+	out16[11] = -1.0f;
+	out16[14] = (2.0f * zFar * zNear) / (zNear - zFar);
+}
+
+void CShaderGL::Mat4Translate(float* inOut16, float tx, float ty, float tz)
+{
+	float t[16];
+	Mat4Identity(t);
+	t[12] = tx;
+	t[13] = ty;
+	t[14] = tz;
+
+	Mat4Multiply(inOut16, inOut16, t);
+}
+
+void CShaderGL::Mat4RotateX(float* inOut16, float angleDeg)
+{
+	const float r = DegToRad(angleDeg);
+	const float c = std::cosf(r);
+	const float s = std::sinf(r);
+
+	float m[16];
+	Mat4Identity(m);
+	m[5] = c;
+	m[6] = s;
+	m[9] = -s;
+	m[10] = c;
+
+	Mat4Multiply(inOut16, inOut16, m);
+}
+
+void CShaderGL::Mat4RotateY(float* inOut16, float angleDeg)
+{
+	const float r = DegToRad(angleDeg);
+	const float c = std::cosf(r);
+	const float s = std::sinf(r);
+
+	float m[16];
+	Mat4Identity(m);
+	m[0] = c;
+	m[2] = -s;
+	m[8] = s;
+	m[10] = c;
+
+	Mat4Multiply(inOut16, inOut16, m);
+}
+
+void CShaderGL::Mat4RotateZ(float* inOut16, float angleDeg)
+{
+	const float r = DegToRad(angleDeg);
+	const float c = std::cosf(r);
+	const float s = std::sinf(r);
+
+	float m[16];
+	Mat4Identity(m);
+	m[0] = c;
+	m[1] = s;
+	m[4] = -s;
+	m[5] = c;
+
+	Mat4Multiply(inOut16, inOut16, m);
+}
+
+GLuint CShaderGL::CompileShader(GLenum type, const char* source, std::string* outError)
+{
+	const GLuint shader = glCreateShader(type);
+	glShaderSource(shader, 1, &source, NULL);
 	glCompileShader(shader);
 
-	// Verificar errores de compilación
-	int success;
+	GLint success = 0;
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-
-	if (!success)
+	if (success == GL_TRUE)
 	{
-		char infoLog[512];
-		glGetShaderInfoLog(shader, 512, NULL, infoLog);
-		g_ConsoleDebug->Write(5, "Error al compilar shader:");
-		g_ConsoleDebug->Write(5, infoLog);
+		return shader;
 	}
 
-	return shader;
-}
+	GLint logLen = 0;
+	glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLen);
+	std::string log;
+	log.resize((logLen > 1) ? (size_t)logLen : 1u, '\0');
+	glGetShaderInfoLog(shader, logLen, NULL, log.data());
+	glDeleteShader(shader);
 
-void CShaderGL::run_projection()
-{
-	if (shader_id != 0)
+	if (outError)
 	{
-		glUseProgram(shader_id);
-
-		glm::mat4 view = glm::mat4(1.0f);
-		glm::mat4 model = glm::mat4(1.0f);
-
-		view = glm::rotate(view, glm::radians(CameraAngle[1]), glm::vec3(0.0f, 1.0f, 0.0f));
-		if (CameraTopViewEnable == false)
-			view = glm::rotate(view, glm::radians(CameraAngle[0]), glm::vec3(1.0f, 0.0f, 0.0f));
-		view = glm::rotate(view, glm::radians(CameraAngle[2]), glm::vec3(0.0f, 0.0f, 1.0f));
-
-		view = glm::translate(view, glm::vec3(-CameraPosition[0], -CameraPosition[1], -CameraPosition[2]));
-
-
-		this->setMat4("view", view);
-		this->setMat4("model", model);
-
-		glUseProgram(0);
-
-		glUniform1i(glGetUniformLocation(shader_id, "texture1"), 0);
-
+		*outError = log;
 	}
+
+	return 0;
 }
 
-void CShaderGL::SetPerspective(float Fov, float Aspect, float ZNear, float ZFar)
+GLuint CShaderGL::LinkProgram(GLuint vs, GLuint fs, std::string* outError)
 {
-	if (shader_id != 0)
+	const GLuint program = glCreateProgram();
+	glAttachShader(program, vs);
+	glAttachShader(program, fs);
+
+	glBindAttribLocation(program, 0, "aPos");
+	glBindAttribLocation(program, 1, "aUV");
+	glBindAttribLocation(program, 2, "aColor");
+
+	glLinkProgram(program);
+
+	GLint success = 0;
+	glGetProgramiv(program, GL_LINK_STATUS, &success);
+	if (success == GL_TRUE)
 	{
-		glUseProgram(shader_id);
-		glm::mat4 projection = glm::perspective(glm::radians(Fov), Aspect, ZNear, ZFar);
-		this->setMat4("projection", projection);
-		glUseProgram(0);
+		return program;
 	}
+
+	GLint logLen = 0;
+	glGetProgramiv(program, GL_INFO_LOG_LENGTH, &logLen);
+	std::string log;
+	log.resize((logLen > 1) ? (size_t)logLen : 1u, '\0');
+	glGetProgramInfoLog(program, logLen, NULL, log.data());
+	glDeleteProgram(program);
+
+	if (outError)
+	{
+		*outError = log;
+	}
+
+	return 0;
 }
 
-// Funciones para establecer uniforms
-void CShaderGL::setBool(const char* name, bool value) const
+void CShaderGL::UpdateMVPIfDirty()
 {
-	glUniform1i(glGetUniformLocation(shader_id, name), (int)value);
-}
+	if (!m_dirtyMvp)
+	{
+		return;
+	}
 
-void CShaderGL::setInt(const char* name, int value) const
-{
-	glUniform1i(glGetUniformLocation(shader_id, name), value);
-}
-
-void CShaderGL::setFloat(const char* name, float value) const
-{
-	glUniform1f(glGetUniformLocation(shader_id, name), value);
-}
-
-void CShaderGL::setVec2(const char* name, float x, float y) const
-{
-	glUniform2f(glGetUniformLocation(shader_id, name), x, y);
-}
-
-void CShaderGL::setVec3(const char* name, float x, float y, float z) const
-{
-	glUniform3f(glGetUniformLocation(shader_id, name), x, y, z);
-}
-
-void CShaderGL::setVec4(const char* name, float x, float y, float z, float w) const
-{
-	glUniform4f(glGetUniformLocation(shader_id, name), x, y, z, w);
-}
-
-void CShaderGL::setMat4(const char* name, glm::mat4& matrix) const
-{
-	glUniformMatrix4fv(glGetUniformLocation(shader_id, name), 1, GL_FALSE, glm::value_ptr(matrix));
+	Mat4Multiply(m_mvp, m_projection, m_view);
+	m_dirtyMvp = false;
 }
 
 CShaderGL* CShaderGL::Instance()
@@ -193,7 +502,3 @@ CShaderGL* CShaderGL::Instance()
 	static CShaderGL sInstance;
 	return &sInstance;
 }
-#endif // SHADER_VERSION_TEST
-
-
-

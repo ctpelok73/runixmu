@@ -1,41 +1,63 @@
 #pragma once
 
-#ifdef SHADER_VERSION_TEST
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp> // Necesario para glm::value_ptr
-
+#include <string>
 
 class CShaderGL
 {
 public:
 	CShaderGL();
-	virtual~CShaderGL();
+	virtual ~CShaderGL();
 
 	void Init();
-	void RenderShader();
-	bool CheckedShader();
-	GLuint GetShaderId();
+	void Shutdown();
 
-	bool readshader(const char* filename, std::string& shader_text);
-	GLuint run_shader(const char* shader_text, GLenum type);
+	bool IsReady() const;
+	GLuint GetProgramId() const;
 
-	void run_projection();
-	void SetPerspective(float Fov, float Aspect, float ZNear, float ZFar);
+	void Use();
+	void Unuse();
 
-	// Funciones para establecer uniforms
-	void setBool(const char* name, bool value) const;
-	void setInt(const char* name, int value) const;
-	void setFloat(const char* name, float value) const;
-	void setVec2(const char* name, float x, float y) const;
-	void setVec3(const char* name, float x, float y, float z) const;
-	void setVec4(const char* name, float x, float y, float z, float w) const;
-	void setMat4(const char* name, glm::mat4& matrix) const;
+	void SetPerspective(float fovDeg, float aspect, float zNear, float zFar);
+	void SetViewFromCamera(const float* cameraPosition3, const float* cameraAngle3, bool cameraTopViewEnable);
+	void SetMVPFromOpenGL();
+	void SetAlphaTestFromOpenGL();
+	void SetColorMulFromOpenGL();
+	void SetColorMulIdentity();
+	void SetFogFromOpenGL();
+	void SetUseTexture(bool enable);
+
+	void ApplyMVP();
 
 	static CShaderGL* Instance();
+
 private:
-	GLuint shader_id;
+	static void Mat4Identity(float* out16);
+	static void Mat4Multiply(float* out16, const float* a16, const float* b16);
+	static void Mat4Perspective(float* out16, float fovDeg, float aspect, float zNear, float zFar);
+	static void Mat4Translate(float* inOut16, float tx, float ty, float tz);
+	static void Mat4RotateX(float* inOut16, float angleDeg);
+	static void Mat4RotateY(float* inOut16, float angleDeg);
+	static void Mat4RotateZ(float* inOut16, float angleDeg);
+
+	static GLuint CompileShader(GLenum type, const char* source, std::string* outError);
+	static GLuint LinkProgram(GLuint vs, GLuint fs, std::string* outError);
+
+	void UpdateMVPIfDirty();
+
+private:
+	GLuint m_programId;
+	GLint m_uMvpLoc;
+	GLint m_uTexLoc;
+	GLint m_uUseTexLoc;
+	GLint m_uAlphaTestLoc;
+	GLint m_uAlphaRefLoc;
+	GLint m_uColorMulLoc;
+	GLint m_uFogEnableLoc;
+
+	bool m_dirtyMvp;
+	float m_projection[16];
+	float m_view[16];
+	float m_mvp[16];
 };
 
-#define gShaderGL				(CShaderGL::Instance())
-#endif // SHADER_VERSION_TEST
+#define gShaderGL (CShaderGL::Instance())

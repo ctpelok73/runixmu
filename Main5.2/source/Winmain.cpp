@@ -207,6 +207,8 @@ GLvoid KillGLWindow(GLvoid)
 {
 	if (g_hRC)
 	{
+		gShaderGL->Shutdown();
+
 		if (!wglMakeCurrent(NULL, NULL))
 		{
 			g_ErrorReport.Write("GL - Release Of DC And RC Failed\r\n");
@@ -561,6 +563,7 @@ bool CreateOpenglWindow()
 	}
 
 	glewInit();
+	gShaderGL->Init();
 
 	glEnable(GL_MULTISAMPLE);
 

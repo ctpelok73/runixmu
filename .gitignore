@@ -198,6 +198,9 @@ _pkginfo.txt
 *.lastbuildstate
 *.log
 *.ltcg.out
+.git_init_*/
+.git_broken_*/
+_wip_backup_*/
 *.obj
 *.pch
 *.pdb

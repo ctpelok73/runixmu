@@ -21,6 +21,8 @@
 #include "PhysicsManager.h"
 #include "MuCrypto/MuCrypto.h"
 
+#include <vector>
+
 extern float MouseX;
 extern float MouseY;
 extern bool MouseLButton;
@@ -1609,22 +1611,7 @@ void BMD::RenderMesh(int i, int RenderFlag, float Alpha, int BlendMesh, float Bl
 
 					if (target_vertex_index != -1)
 					{
-#ifdef SHADER_VERSION_TEST
-						this->RenderVertexBuffer(i, m, target_vertex_index + 1, vertices, textCoords, colors);
-#else
-						glEnableClientState(GL_VERTEX_ARRAY);
-						if (enableColor) glEnableClientState(GL_COLOR_ARRAY);
-						glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-
-						glVertexPointer(3, GL_FLOAT, 0, vertices);
-						if (enableColor) glColorPointer(4, GL_FLOAT, 0, colors);
-						glTexCoordPointer(2, GL_FLOAT, 0, textCoords);
-						glDrawArrays(GL_TRIANGLES, 0, m->NumTriangles * 3);
-
-						glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-						if (enableColor) glDisableClientState(GL_COLOR_ARRAY);
-						glDisableClientState(GL_VERTEX_ARRAY);
-#endif // SHADER_VERSION_TEST
+						this->RenderVertexBuffer(i, m, target_vertex_index + 1, vertices, textCoords, enableColor ? colors : NULL);
 					}
 				}
 			}
@@ -2310,6 +2297,32 @@ void BMD::Release()
 		{
 			Mesh_t* m = &Meshs[i];
 
+			if (m->VAO != 0)
+			{
+				glDeleteVertexArrays(1, &m->VAO);
+				m->VAO = 0;
+			}
+			if (m->VBO_Vertices != 0)
+			{
+				glDeleteBuffers(1, &m->VBO_Vertices);
+				m->VBO_Vertices = 0;
+			}
+			if (m->VBO_TexCoords != 0)
+			{
+				glDeleteBuffers(1, &m->VBO_TexCoords);
+				m->VBO_TexCoords = 0;
+			}
+			if (m->VBO_Colors != 0)
+			{
+				glDeleteBuffers(1, &m->VBO_Colors);
+				m->VBO_Colors = 0;
+			}
+			if (m->EBO != 0)
+			{
+				glDeleteBuffers(1, &m->EBO);
+				m->EBO = 0;
+			}
+
 			SAFE_DELETE_ARRAY(m->Vertices);
 			SAFE_DELETE_ARRAY(m->Normals);
 			SAFE_DELETE_ARRAY(m->TexCoords);
@@ -2814,9 +2827,7 @@ bool BMD::Open2(char* DirName, char* ModelFileName, bool bReAlloc)
 			m->m_csTScript = NULL;
 		}
 
-#ifdef SHADER_VERSION_TEST
 		this->CreateVertexBuffer(i, *m);
-#endif // SHADER_VERSION_TEST
 	}
 
 	for (i = 0; i < NumActions; i++)
@@ -3309,118 +3320,125 @@ void createViewMatrix(float* matrix, float* cameraPosition, float* cameraAngles,
 
 void BMD::CreateVertexBuffer(int i, Mesh_t& mesh)
 {
-#ifdef SHADER_VERSION_TEST
-	GLuint shader_id = gShaderGL->GetShaderId();
-
-	if (shader_id != 0)
+	if (!gShaderGL->IsReady())
 	{
-		auto vertices = RenderArrayVertices;
-		auto colors = RenderArrayColors;
-		auto textCoords = RenderArrayTexCoords;
-		std::vector<unsigned short> indices;
-
-		int target_vertex_index = -1;
-
-		for (int j = 0; j < mesh.NumTriangles; j++)
-		{
-			Triangle_t* triangle = &mesh.Triangles[j];
-
-			for (int k = 0; k < triangle->Polygon; k++)
-			{
-				int source_vertex_index = triangle->VertexIndex[k];
-
-				target_vertex_index++;
-
-				VectorCopy(VertexTransform[i][source_vertex_index], vertices[target_vertex_index]);
-
-				TexCoord_t* textcoord = &mesh.TexCoords[triangle->TexCoordIndex[k]];
-				textCoords[target_vertex_index][0] = 0.0;
-				textCoords[target_vertex_index][1] = 0.0;
-				colors[target_vertex_index][0] = 1.f;
-				colors[target_vertex_index][1] = 1.f;
-				colors[target_vertex_index][2] = 1.f;
-				colors[target_vertex_index][3] = 1.f;
-				indices.push_back(target_vertex_index);
-			}
-		}
-
-
-		glGenVertexArrays(1, &mesh.VAO);
-		glGenBuffers(1, &mesh.VBO_Vertices);
-		glGenBuffers(1, &mesh.VBO_TexCoords);
-		glGenBuffers(1, &mesh.VBO_Colors);
-		glGenBuffers(1, &mesh.EBO);
-
-		glBindVertexArray(mesh.VAO);
-		// Vertices
-		glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO_Vertices);
-		glBufferData(GL_ARRAY_BUFFER, indices.size() * sizeof(vec3_t), vertices, GL_STATIC_DRAW);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3_t), (void*)0);
-		glEnableVertexAttribArray(0);
-		// Coordenadas de Textura
-		glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO_TexCoords);
-		glBufferData(GL_ARRAY_BUFFER, indices.size() * sizeof(vec2_t), textCoords, GL_STATIC_DRAW);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(vec2_t), (void*)0);
-		glEnableVertexAttribArray(1);
-		// Color de la textura
-		glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO_Colors);
-		glBufferData(GL_ARRAY_BUFFER, indices.size() * sizeof(vec4_t), colors, GL_STATIC_DRAW);
-		glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(vec4_t), (void*)0);
-		glEnableVertexAttribArray(2);
-		// Indices de los Triangulos
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.EBO);
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned short), indices.data(), GL_STATIC_DRAW);
-		glBindVertexArray(0); // Desvinculamos el VAO
+		return;
 	}
-#endif // SHADER_VERSION_TEST
+
+	if (mesh.VAO != 0)
+	{
+		return;
+	}
+
+	const int maxVertices = mesh.NumTriangles * 3;
+	std::vector<unsigned short> indices;
+	indices.reserve(maxVertices);
+	for (int v = 0; v < maxVertices; v++)
+	{
+		indices.push_back((unsigned short)v);
+	}
+
+	glGenVertexArrays(1, &mesh.VAO);
+	glGenBuffers(1, &mesh.VBO_Vertices);
+	glGenBuffers(1, &mesh.VBO_TexCoords);
+	glGenBuffers(1, &mesh.VBO_Colors);
+	glGenBuffers(1, &mesh.EBO);
+
+	glBindVertexArray(mesh.VAO);
+
+	glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO_Vertices);
+	glBufferData(GL_ARRAY_BUFFER, maxVertices * sizeof(vec3_t), NULL, GL_STREAM_DRAW);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+	glEnableVertexAttribArray(0);
+
+	glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO_TexCoords);
+	glBufferData(GL_ARRAY_BUFFER, maxVertices * sizeof(vec2_t), NULL, GL_STREAM_DRAW);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+	glEnableVertexAttribArray(1);
+
+	glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO_Colors);
+	glBufferData(GL_ARRAY_BUFFER, maxVertices * sizeof(vec4_t), NULL, GL_STREAM_DRAW);
+	glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 0, (void*)0);
+	glEnableVertexAttribArray(2);
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.EBO);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(indices.size() * sizeof(unsigned short)), indices.data(), GL_STATIC_DRAW);
+
+	glBindVertexArray(0);
 }
 
 void BMD::RenderVertexBuffer(int i, Mesh_t* m, int vertex_index, vec3_t* vertices, vec2_t* textCoords, vec4_t* colors)
 {
-#ifdef SHADER_VERSION_TEST
-	GLuint shader_id = gShaderGL->GetShaderId();
-
-	if (shader_id != 0)
+	if (!gShaderGL->IsReady())
 	{
-		gShaderGL->run_projection();
+		return;
+	}
 
-		glBindBuffer(GL_ARRAY_BUFFER, m->VBO_Vertices);
-		glBufferSubData(GL_ARRAY_BUFFER, 0, vertex_index * sizeof(vec3_t), vertices);
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
-		//--
-		glBindBuffer(GL_ARRAY_BUFFER, m->VBO_TexCoords);
-		glBufferSubData(GL_ARRAY_BUFFER, 0, vertex_index * sizeof(vec2_t), textCoords);
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
-		//--
-		if (colors != NULL)
+	if (m->VAO == 0)
+	{
+		this->CreateVertexBuffer(i, *m);
+		if (m->VAO == 0)
 		{
-			glBindBuffer(GL_ARRAY_BUFFER, m->VBO_Colors);
-			glBufferSubData(GL_ARRAY_BUFFER, 0, vertex_index * sizeof(vec4_t), colors);
-			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			return;
 		}
+	}
 
-		glUseProgram(shader_id);
-		glBindVertexArray(m->VAO);
-		glDrawElements(GL_TRIANGLES, vertex_index, GL_UNSIGNED_SHORT, 0);
-		glBindVertexArray(0);
-		glUseProgram(0);
+	const int maxVertices = m->NumTriangles * 3;
+
+	glBindBuffer(GL_ARRAY_BUFFER, m->VBO_Vertices);
+	glBufferData(GL_ARRAY_BUFFER, maxVertices * sizeof(vec3_t), NULL, GL_STREAM_DRAW);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, vertex_index * sizeof(vec3_t), vertices);
+
+	glBindBuffer(GL_ARRAY_BUFFER, m->VBO_TexCoords);
+	glBufferData(GL_ARRAY_BUFFER, maxVertices * sizeof(vec2_t), NULL, GL_STREAM_DRAW);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, vertex_index * sizeof(vec2_t), textCoords);
+
+	glBindBuffer(GL_ARRAY_BUFFER, m->VBO_Colors);
+	glBufferData(GL_ARRAY_BUFFER, maxVertices * sizeof(vec4_t), NULL, GL_STREAM_DRAW);
+	if (colors != NULL)
+	{
+		glBufferSubData(GL_ARRAY_BUFFER, 0, vertex_index * sizeof(vec4_t), colors);
 	}
 	else
 	{
-		glEnableClientState(GL_VERTEX_ARRAY);
-		if (colors != NULL) glEnableClientState(GL_COLOR_ARRAY);
-		glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-
-		glVertexPointer(3, GL_FLOAT, 0, vertices);
-		if (colors != NULL) glColorPointer(4, GL_FLOAT, 0, colors);
-		glTexCoordPointer(2, GL_FLOAT, 0, textCoords);
-		glDrawArrays(GL_TRIANGLES, 0, m->NumTriangles * 3);
-
-		glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-		if (colors != NULL) glDisableClientState(GL_COLOR_ARRAY);
-		glDisableClientState(GL_VERTEX_ARRAY);
+		static std::vector<float> sWhiteColors;
+		const int neededFloats = vertex_index * 4;
+		if ((int)sWhiteColors.size() < neededFloats)
+		{
+			sWhiteColors.resize(neededFloats);
+		}
+		for (int v = 0; v < vertex_index; v++)
+		{
+			const int base = v * 4;
+			sWhiteColors[base + 0] = 1.0f;
+			sWhiteColors[base + 1] = 1.0f;
+			sWhiteColors[base + 2] = 1.0f;
+			sWhiteColors[base + 3] = 1.0f;
+		}
+		glBufferSubData(GL_ARRAY_BUFFER, 0, vertex_index * sizeof(vec4_t), sWhiteColors.data());
 	}
-#endif // SHADER_VERSION_TEST
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+	GLint prevProgram = 0;
+	glGetIntegerv(GL_CURRENT_PROGRAM, &prevProgram);
+
+	gShaderGL->Use();
+	gShaderGL->SetUseTexture(TextureEnable);
+	gShaderGL->SetAlphaTestFromOpenGL();
+	if (colors != NULL)
+		gShaderGL->SetColorMulIdentity();
+	else
+		gShaderGL->SetColorMulFromOpenGL();
+	gShaderGL->SetFogFromOpenGL();
+	gShaderGL->SetMVPFromOpenGL();
+	gShaderGL->ApplyMVP();
+
+	glBindVertexArray(m->VAO);
+	glDrawElements(GL_TRIANGLES, vertex_index, GL_UNSIGNED_SHORT, 0);
+	glBindVertexArray(0);
+
+	glUseProgram((GLuint)prevProgram);
 }
 
 
