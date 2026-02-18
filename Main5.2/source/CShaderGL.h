@@ -53,10 +53,15 @@ private:
 	GLint m_uAlphaRefLoc;
 	GLint m_uColorMulLoc;
 	GLint m_uFogEnableLoc;
+	GLint m_uModelViewLoc;
+	GLint m_uFogColorLoc;
+	GLint m_uFogEndLoc;
+	GLint m_uFogScaleLoc;
 
 	bool m_dirtyMvp;
 	float m_projection[16];
 	float m_view[16];
+	float m_modelView[16];
 	float m_mvp[16];
 };
 
