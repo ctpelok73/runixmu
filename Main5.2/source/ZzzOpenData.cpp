@@ -955,6 +955,9 @@ void OpenItems()
 	gmClientModels->AccessModel(MODEL_HELPER + 47, "Data\\Item\\", "entrancered");
 	gmClientModels->AccessModel(MODEL_HELPER + 48, "Data\\Item\\", "entrancebleu");
 	gmClientModels->AccessModel(MODEL_POTION + 54, "Data\\Item\\", "juju");
+	gmClientModels->AccessModel(MODEL_POTION + 55, "Data\\Item\\", "roboxgreen");
+	gmClientModels->AccessModel(MODEL_POTION + 56, "Data\\Item\\", "roboxred");
+	gmClientModels->AccessModel(MODEL_POTION + 57, "Data\\Item\\", "roboxpurple");
 	gmClientModels->AccessModel(MODEL_HELPER + 43, "Data\\Item\\", "monmark01");
 	gmClientModels->AccessModel(MODEL_HELPER + 44, "Data\\Item\\", "monmark02");
 	gmClientModels->AccessModel(MODEL_HELPER + 45, "Data\\Item\\", "monmark03");
@@ -2091,7 +2094,7 @@ void OpenNpc(int Type)
 		gmClientModels->OpenTexture(Type, "Npc\\");
 		break;
 
-		//  µ¥ºñ¾Æ½º, ·Î·£½Ã¾Æ Ãß°¡ »óÁ¡ NPC
+		//  ï¿½ï¿½ï¿½ï¿½Æ½ï¿½, ï¿½Î·ï¿½ï¿½Ã¾ï¿½ ï¿½ß°ï¿½ ï¿½ï¿½ï¿½ï¿½ NPC
 	case MODEL_DEVIAS_TRADER:
 		gmClientModels->AccessModel(MODEL_DEVIAS_TRADER, "Data\\Npc\\", "DeviasTrader", 1);
 		gmClientModels->OpenTexture(Type, "Npc\\");
@@ -2103,12 +2106,12 @@ void OpenNpc(int Type)
 		gmClientModels->OpenTexture(MODEL_ANGEL, "Npc\\");
 		break;
 #endif	// _PVP_ATTACK_GUARD
-	case MODEL_NPC_BREEDER:    //  Á¶·Ã»ç NPC.
+	case MODEL_NPC_BREEDER:    //  ï¿½ï¿½ï¿½Ã»ï¿½ NPC.
 		gmClientModels->AccessModel(MODEL_NPC_BREEDER, "Data\\Npc\\", "Breeder");
 		gmClientModels->OpenTexture(MODEL_NPC_BREEDER, "Npc\\");
 		break;
 #ifdef _PVP_MURDERER_HERO_ITEM
-	case MODEL_HERO_SHOP:	// ¿µ¿õ »óÁ¡
+	case MODEL_HERO_SHOP:	// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 		gmClientModels->AccessModel(MODEL_HERO_SHOP, "Data\\Npc\\", "HeroNpc");
 		gmClientModels->OpenTexture(MODEL_HERO_SHOP, "Npc\\");
 		break;
@@ -3627,7 +3630,7 @@ void OpenMonsterModel(int Type)
 			b->Actions[MONSTER01_ATTACK1].PlaySpeed = 0.5f;
 			b->Actions[MONSTER01_ATTACK2].PlaySpeed = 0.5f;
 		}
-		b->BoneHead = 20;//ÀÎ¾î
+		b->BoneHead = 20;//ï¿½Î¾ï¿½
 		break;
 	case 35:
 		LoadWaveFile(SOUND_MONSTER + 135, "Data\\Sound\\mValkyrie1.wav", Channel, Enable);
@@ -3998,7 +4001,7 @@ void OpenMonsterModel(int Type)
 		LoadWaveFile(SOUND_RAKLION_ICEGIANT_DEATH, "Data\\Sound\\w58w59\\IceGiant_death.wav", 1);
 		break;
 	case 148:
-		LoadWaveFile(SOUND_MONSTER + 34, "Data\\Sound\\mÇï½ºÆÄÀÌ´õÁ×±â.wav", 1);
+		LoadWaveFile(SOUND_MONSTER + 34, "Data\\Sound\\mï¿½ï½ºï¿½ï¿½ï¿½Ì´ï¿½ï¿½×±ï¿½.wav", 1);
 		LoadWaveFile(SOUND_RAKLION_COOLERTIN_ATTACK, "Data\\Sound\\w58w59\\Coolertin_attack.wav", 1);
 		LoadWaveFile(SOUND_RAKLION_COOLERTIN_MOVE, "Data\\Sound\\w58w59\\Coolertin_move.wav", 1);
 		break;
@@ -4300,7 +4303,7 @@ void OpenSkills()
 	gmClientModels->AccessModel(MODEL_MAGIC_CIRCLE1, "Data\\Skill\\", "MagicCircle", 1);
 	gmClientModels->AccessModel(MODEL_ARROW_WING, "Data\\Skill\\", "ArrowWing", 1);
 	gmClientModels->AccessModel(MODEL_ARROW_BOMB, "Data\\Skill\\", "ArrowBomb", 1);
-	gmClientModels->AccessModel(MODEL_BALL, "Data\\Skill\\", "Ball", 1);//°ø
+	gmClientModels->AccessModel(MODEL_BALL, "Data\\Skill\\", "Ball", 1);//ï¿½ï¿½
 
 	gmClientModels->GetModel(MODEL_BALL)->Actions[0].PlaySpeed = 0.5f;
 
@@ -4962,7 +4965,7 @@ void OpenSounds()
 	LoadWaveFile(SOUND_TOWER01, "Data\\Sound\\aTower.wav", 1);
 	LoadWaveFile(SOUND_WATER01, "Data\\Sound\\aWater.wav", 1);
 	LoadWaveFile(SOUND_DESERT01, "Data\\Sound\\desert.wav", 1);
-	//LoadWaveFile(SOUND_BOSS01		    ,"Data\\Sound\\aÄïµÐ.wav",1);
+	//LoadWaveFile(SOUND_BOSS01		    ,"Data\\Sound\\aï¿½ï¿½ï¿½.wav",1);
 	LoadWaveFile(SOUND_HUMAN_WALK_GROUND, "Data\\Sound\\pWalk(Soil).wav", 2);
 	LoadWaveFile(SOUND_HUMAN_WALK_GRASS, "Data\\Sound\\pWalk(Grass).wav", 2);
 	LoadWaveFile(SOUND_HUMAN_WALK_SNOW, "Data\\Sound\\pWalk(Snow).wav", 2);
@@ -5005,7 +5008,7 @@ void OpenSounds()
 	LoadWaveFile(SOUND_DROP_GOLD01, "Data\\Sound\\pDropMoney.wav", 1);
 	LoadWaveFile(SOUND_JEWEL01, "Data\\Sound\\eGem.wav", 1);
 	LoadWaveFile(SOUND_GET_ITEM01, "Data\\Sound\\pGetItem.wav", 1);
-	//LoadWaveFile(SOUND_SHOUT01    		,"Data\\Sound\\p±âÇÕ.wav",1); 
+	//LoadWaveFile(SOUND_SHOUT01    		,"Data\\Sound\\pï¿½ï¿½ï¿½ï¿½.wav",1); 
 
 	//skill
 	LoadWaveFile(SOUND_SKILL_DEFENSE, "Data\\Sound\\sKnightDefense.wav", 1);
@@ -5021,13 +5024,13 @@ void OpenSounds()
 	LoadWaveFile(SOUND_HELLFIRE, "Data\\Sound\\sHellFire.wav", 2, Enable3DSound);
 	LoadWaveFile(SOUND_ICE, "Data\\Sound\\sIce.wav", 2, Enable3DSound);
 	LoadWaveFile(SOUND_FLAME, "Data\\Sound\\sFlame.wav", 2, Enable3DSound);
-	//LoadWaveFile(SOUND_FLASH            ,"Data\\Sound\\mÈ÷µå¶ó°ø°Ý1.wav",2,Enable3DSound);
+	//LoadWaveFile(SOUND_FLASH            ,"Data\\Sound\\mï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½1.wav",2,Enable3DSound);
 	LoadWaveFile(SOUND_FLASH, "Data\\Sound\\sAquaFlash.wav", 2, Enable3DSound);
 
 	LoadWaveFile(SOUND_BREAK01, "Data\\Sound\\eBreak.wav", 1, Enable3DSound);
 	LoadWaveFile(SOUND_EXPLOTION01, "Data\\Sound\\eExplosion.wav", 1, Enable3DSound);
 	LoadWaveFile(SOUND_METEORITE01, "Data\\Sound\\eMeteorite.wav", 2, Enable3DSound);
-	//LoadWaveFile(SOUND_METEORITE02	    ,"Data\\Sound\\eÀ¯¼º.wav",2,Enable3DSound);
+	//LoadWaveFile(SOUND_METEORITE02	    ,"Data\\Sound\\eï¿½ï¿½ï¿½ï¿½.wav",2,Enable3DSound);
 	LoadWaveFile(SOUND_THUNDER01, "Data\\Sound\\eThunder.wav", 1, Enable3DSound);
 
 	LoadWaveFile(SOUND_BONE1, "Data\\Sound\\mBone1.wav", 2, Enable3DSound);
