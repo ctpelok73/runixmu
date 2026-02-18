@@ -369,7 +369,7 @@ static void gmRenderMonsterPreview3D(int monsterIndex, float scaleMul, float rot
 	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
 	glLoadIdentity();
-	glViewport2(clipX, clipYTop, clipW, clipH);
+	glViewport2(clipX, clipY, clipW, clipH);
 	gluPerspective2(fovDeg, (float)(clipW) / (float)(clipH), previewNear, previewFar);
 
 	glMatrixMode(GL_MODELVIEW);
