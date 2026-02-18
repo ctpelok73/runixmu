@@ -15,6 +15,7 @@ attribute vec2 aUV;
 attribute vec4 aColor;
 
 uniform mat4 uMVP;
+uniform mat4 uModelView;
 
 varying vec2 vUV;
 varying vec4 vColor;
@@ -25,7 +26,7 @@ void main()
 	gl_Position = uMVP * vec4(aPos, 1.0);
 	vUV = aUV;
 	vColor = aColor;
-	vec4 eyePos = gl_ModelViewMatrix * vec4(aPos, 1.0);
+	vec4 eyePos = uModelView * vec4(aPos, 1.0);
 	vFogCoord = length(eyePos.xyz);
 }
 )GLSL";
@@ -39,6 +40,9 @@ uniform int uAlphaTest;
 uniform float uAlphaRef;
 uniform vec4 uColorMul;
 uniform int uFogEnable;
+uniform vec3 uFogColor;
+uniform float uFogEnd;
+uniform float uFogScale;
 
 varying vec2 vUV;
 varying vec4 vColor;
@@ -58,8 +62,8 @@ void main()
 	}
 	if (uFogEnable != 0)
 	{
-		float fogFactor = clamp((gl_Fog.end - vFogCoord) * gl_Fog.scale, 0.0, 1.0);
-		outColor.rgb = mix(gl_Fog.color.rgb, outColor.rgb, fogFactor);
+		float fogFactor = clamp((uFogEnd - vFogCoord) * uFogScale, 0.0, 1.0);
+		outColor.rgb = mix(uFogColor.rgb, outColor.rgb, fogFactor);
 	}
 	outColor = clamp(outColor, 0.0, 1.0);
 	gl_FragColor = outColor;
@@ -81,10 +85,15 @@ CShaderGL::CShaderGL()
 	  m_uAlphaRefLoc(-1),
 	  m_uColorMulLoc(-1),
 	  m_uFogEnableLoc(-1),
+	  m_uModelViewLoc(-1),
+	  m_uFogColorLoc(-1),
+	  m_uFogEndLoc(-1),
+	  m_uFogScaleLoc(-1),
 	  m_dirtyMvp(true)
 {
 	Mat4Identity(m_projection);
 	Mat4Identity(m_view);
+	Mat4Identity(m_modelView);
 	Mat4Identity(m_mvp);
 }
 
@@ -133,6 +142,10 @@ void CShaderGL::Init()
 	m_uAlphaRefLoc = glGetUniformLocation(m_programId, "uAlphaRef");
 	m_uColorMulLoc = glGetUniformLocation(m_programId, "uColorMul");
 	m_uFogEnableLoc = glGetUniformLocation(m_programId, "uFogEnable");
+	m_uModelViewLoc = glGetUniformLocation(m_programId, "uModelView");
+	m_uFogColorLoc = glGetUniformLocation(m_programId, "uFogColor");
+	m_uFogEndLoc = glGetUniformLocation(m_programId, "uFogEnd");
+	m_uFogScaleLoc = glGetUniformLocation(m_programId, "uFogScale");
 
 	glUseProgram(m_programId);
 	if (m_uTexLoc >= 0)
@@ -159,6 +172,18 @@ void CShaderGL::Init()
 	{
 		glUniform1i(m_uFogEnableLoc, 0);
 	}
+	if (m_uFogColorLoc >= 0)
+	{
+		glUniform3f(m_uFogColorLoc, 0.0f, 0.0f, 0.0f);
+	}
+	if (m_uFogEndLoc >= 0)
+	{
+		glUniform1f(m_uFogEndLoc, 1.0f);
+	}
+	if (m_uFogScaleLoc >= 0)
+	{
+		glUniform1f(m_uFogScaleLoc, 1.0f);
+	}
 	glUseProgram(0);
 }
 
@@ -177,6 +202,10 @@ void CShaderGL::Shutdown()
 	m_uAlphaRefLoc = -1;
 	m_uColorMulLoc = -1;
 	m_uFogEnableLoc = -1;
+	m_uModelViewLoc = -1;
+	m_uFogColorLoc = -1;
+	m_uFogEndLoc = -1;
+	m_uFogScaleLoc = -1;
 	m_dirtyMvp = true;
 }
 
@@ -235,6 +264,11 @@ void CShaderGL::SetMVPFromOpenGL()
 	glGetFloatv(GL_PROJECTION_MATRIX, proj);
 	glGetFloatv(GL_MODELVIEW_MATRIX, model);
 
+	for (int i = 0; i < 16; i++)
+	{
+		m_modelView[i] = model[i];
+	}
+
 	Mat4Multiply(m_mvp, proj, model);
 	m_dirtyMvp = false;
 }
@@ -290,6 +324,39 @@ void CShaderGL::SetFogFromOpenGL()
 
 	const GLboolean enabled = glIsEnabled(GL_FOG);
 	glUniform1i(m_uFogEnableLoc, enabled ? 1 : 0);
+
+	if (!enabled)
+	{
+		return;
+	}
+
+	if (m_uFogColorLoc >= 0)
+	{
+		GLfloat fogColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+		glGetFloatv(GL_FOG_COLOR, fogColor);
+		glUniform3f(m_uFogColorLoc, fogColor[0], fogColor[1], fogColor[2]);
+	}
+
+	GLfloat fogStart = 0.0f;
+	GLfloat fogEnd = 1.0f;
+	glGetFloatv(GL_FOG_START, &fogStart);
+	glGetFloatv(GL_FOG_END, &fogEnd);
+
+	float fogScale = 1.0f;
+	const float fogRange = fogEnd - fogStart;
+	if (std::fabs(fogRange) > 0.00001f)
+	{
+		fogScale = 1.0f / fogRange;
+	}
+
+	if (m_uFogEndLoc >= 0)
+	{
+		glUniform1f(m_uFogEndLoc, fogEnd);
+	}
+	if (m_uFogScaleLoc >= 0)
+	{
+		glUniform1f(m_uFogScaleLoc, fogScale);
+	}
 }
 
 void CShaderGL::SetUseTexture(bool enable)
@@ -314,6 +381,10 @@ void CShaderGL::ApplyMVP()
 	if (m_uMvpLoc >= 0)
 	{
 		glUniformMatrix4fv(m_uMvpLoc, 1, GL_FALSE, m_mvp);
+	}
+	if (m_uModelViewLoc >= 0)
+	{
+		glUniformMatrix4fv(m_uModelViewLoc, 1, GL_FALSE, m_modelView);
 	}
 }
 
