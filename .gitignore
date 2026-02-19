@@ -218,3 +218,4 @@ _pkginfo.txt
 *.ipch
 *.db
 *.opendb
+UpdaterService/UpdaterManager.exe

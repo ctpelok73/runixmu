@@ -82,9 +82,10 @@ app.get('/update/manifest', (req, res) => {
   res.json(data);
 });
 
-app.get('/update/files/*', (req, res) => {
+app.get('/update/files/*splat', (req, res) => {
   const root = config.clientRoot;
-  const rel = req.params[0];
+  const splat = req.params.splat;
+  const rel = Array.isArray(splat) ? splat.join('/') : String(splat || '');
   const full = path.join(root, rel);
   if (!fs.existsSync(full)) {
     res.status(404).send('File not found');
@@ -96,4 +97,3 @@ app.get('/update/files/*', (req, res) => {
 app.listen(config.port, () => {
   console.log('MU Updater Service listening on port ' + config.port);
 });
-

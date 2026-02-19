@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.14.36930.0 d17.14
@@ -6,6 +6,8 @@ MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Main", "source\Main.vcxproj", "{83C6A8DE-5418-41B5-BD9C-471F99FEAAA0}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Launcher", "..\Launcher\Launcher.vcxproj", "{E2B9A4C7-5B1D-4A6E-9F5D-4C1F2E7D9A31}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "UpdaterManager", "..\UpdaterManager\UpdaterManager.vcxproj", "{7F6E4C8B-1A2B-4F3C-9D2E-0A1B2C3D4E5F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +23,10 @@ Global
 		{E2B9A4C7-5B1D-4A6E-9F5D-4C1F2E7D9A31}.Debug|x86.Build.0 = Debug|Win32
 		{E2B9A4C7-5B1D-4A6E-9F5D-4C1F2E7D9A31}.Release|x86.ActiveCfg = Release|Win32
 		{E2B9A4C7-5B1D-4A6E-9F5D-4C1F2E7D9A31}.Release|x86.Build.0 = Release|Win32
+		{7F6E4C8B-1A2B-4F3C-9D2E-0A1B2C3D4E5F}.Debug|x86.ActiveCfg = Debug|Win32
+		{7F6E4C8B-1A2B-4F3C-9D2E-0A1B2C3D4E5F}.Debug|x86.Build.0 = Debug|Win32
+		{7F6E4C8B-1A2B-4F3C-9D2E-0A1B2C3D4E5F}.Release|x86.ActiveCfg = Release|Win32
+		{7F6E4C8B-1A2B-4F3C-9D2E-0A1B2C3D4E5F}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
