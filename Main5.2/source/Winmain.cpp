@@ -404,6 +404,194 @@ BOOL GetFileVersion(char* lpszFileName, WORD* pwVersion)
 	return (TRUE);
 }
 
+#pragma pack(push, 1)
+struct LAUNCHER_TOKEN_DATA
+{
+	DWORD Magic;
+	DWORD Version;
+	ULONGLONG Timestamp;
+	DWORD Random;
+	DWORD Crc;
+};
+#pragma pack(pop)
+
+static DWORD LauncherToken_HashString(const char* text)
+{
+	DWORD h = 2166136261u;
+	while (*text)
+	{
+		char c = *text++;
+		if (c >= 'A' && c <= 'Z')
+		{
+			c = char(c - 'A' + 'a');
+		}
+		h ^= (BYTE)c;
+		h *= 16777619u;
+	}
+	return h;
+}
+
+static void LauncherToken_BuildPath(char* outPath, size_t size)
+{
+	char modulePath[MAX_PATH];
+	if (GetModuleFileNameA(NULL, modulePath, MAX_PATH) == 0)
+	{
+		if (size > 0)
+		{
+			outPath[0] = 0;
+		}
+		return;
+	}
+
+	char dirPath[MAX_PATH];
+	lstrcpynA(dirPath, modulePath, MAX_PATH);
+	char* p = strrchr(dirPath, '\\');
+	if (p)
+	{
+		*(p + 1) = 0;
+	}
+
+	DWORD hash = LauncherToken_HashString(dirPath);
+
+	char fileName[64];
+	wsprintfA(fileName, "tex_%08X.bin", hash);
+
+	char dataDir[MAX_PATH];
+	wsprintfA(dataDir, "%s%s", dirPath, "Data\\");
+
+	if (size == 0)
+	{
+		return;
+	}
+
+	lstrcpynA(outPath, dataDir, (int)size);
+	size_t len = strlen(outPath);
+	size_t need = len + strlen(fileName) + 1;
+	if (need > size)
+	{
+		outPath[0] = 0;
+		return;
+	}
+	strcat(outPath, fileName);
+}
+
+static void LauncherToken_EncryptBuffer(BYTE* buffer, size_t size)
+{
+	DWORD state = 0xA5C3F18Du;
+	for (size_t i = 0; i < size; i++)
+	{
+		state = state * 1664525u + 1013904223u;
+		buffer[i] ^= (BYTE)(state >> 24);
+	}
+}
+
+static DWORD LauncherToken_ComputeCrc(DWORD magic, DWORD version, ULONGLONG timestamp, DWORD random)
+{
+	DWORD crc = 0x1F123BB5u;
+	crc ^= magic;
+	crc = (crc << 5) | (crc >> (32 - 5));
+	crc ^= version;
+	crc = (crc << 7) | (crc >> (32 - 7));
+	crc ^= (DWORD)(timestamp & 0xFFFFFFFFu);
+	crc = (crc << 9) | (crc >> (32 - 9));
+	crc ^= random;
+	return crc;
+}
+
+static bool LauncherToken_VerifyAndConsume()
+{
+	char path[MAX_PATH];
+	LauncherToken_BuildPath(path, MAX_PATH);
+	if (path[0] == 0)
+	{
+		return false;
+	}
+
+	HANDLE hFile = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (hFile == INVALID_HANDLE_VALUE)
+	{
+		return false;
+	}
+
+	LAUNCHER_TOKEN_DATA data;
+	DWORD readBytes = 0;
+	BOOL ok = ReadFile(hFile, &data, sizeof(data), &readBytes, NULL);
+	CloseHandle(hFile);
+
+	if (!ok || readBytes != sizeof(data))
+	{
+		DeleteFileA(path);
+		return false;
+	}
+
+	LauncherToken_EncryptBuffer((BYTE*)&data, sizeof(data));
+
+	if (data.Magic != 0x4C544B31u)
+	{
+		DeleteFileA(path);
+		return false;
+	}
+
+	DWORD crc = LauncherToken_ComputeCrc(data.Magic, data.Version, data.Timestamp, data.Random);
+	if (crc != data.Crc)
+	{
+		DeleteFileA(path);
+		return false;
+	}
+
+	ULONGLONG now = GetTickCount64();
+	ULONGLONG diff = (now > data.Timestamp) ? (now - data.Timestamp) : (data.Timestamp - now);
+	if (diff > 600000)
+	{
+		DeleteFileA(path);
+		return false;
+	}
+
+	DeleteFileA(path);
+	return true;
+}
+
+static bool LauncherToken_RunLauncher()
+{
+	char modulePath[MAX_PATH];
+	if (GetModuleFileNameA(NULL, modulePath, MAX_PATH) == 0)
+	{
+		return false;
+	}
+
+	char dirPath[MAX_PATH];
+	lstrcpynA(dirPath, modulePath, MAX_PATH);
+	char* p = strrchr(dirPath, '\\');
+	if (p)
+	{
+		*(p + 1) = 0;
+	}
+
+	char launcherPath[MAX_PATH];
+	wsprintfA(launcherPath, "%s%s", dirPath, "Launcher.exe");
+
+	if (GetFileAttributesA(launcherPath) == INVALID_FILE_ATTRIBUTES)
+	{
+		return false;
+	}
+
+	STARTUPINFOA si;
+	PROCESS_INFORMATION pi;
+	ZeroMemory(&si, sizeof(si));
+	ZeroMemory(&pi, sizeof(pi));
+	si.cb = sizeof(si);
+
+	BOOL res = CreateProcessA(launcherPath, NULL, NULL, NULL, FALSE, 0, NULL, dirPath, &si, &pi);
+	if (!res)
+	{
+		return false;
+	}
+
+	CloseHandle(pi.hThread);
+	CloseHandle(pi.hProcess);
+	return true;
+}
+
 extern PATH* path;
 
 void DestroyWindow()
@@ -1092,6 +1280,15 @@ BOOL CALLBACK ConfigDialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine, int nCmdShow)
 {
 	SetProcessDPIAware();
+
+	if (!LauncherToken_VerifyAndConsume())
+	{
+		if (!LauncherToken_RunLauncher())
+		{
+			MessageBoxA(NULL, "Launcher.exe not found. Please start the game from the launcher.", "Error", MB_OK | MB_ICONERROR);
+		}
+		return 0;
+	}
 
 	if (GMProtect->ReadMainFile() == false)
 	{
