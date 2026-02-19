@@ -191,12 +191,29 @@ static bool ScheduleLauncherReplace(const char* currentExe, const char* newExe)
 // Thread to check server status
 DWORD WINAPI CheckServerStatusThread(LPVOID lpParam)
 {
+    bool haveLocal = false;
+    char localVer[64];
+    char modulePath[MAX_PATH];
+    if (GetModuleFileNameA(NULL, modulePath, MAX_PATH) != 0)
+    {
+        char dirPath[MAX_PATH];
+        lstrcpynA(dirPath, modulePath, MAX_PATH);
+        char* p = strrchr(dirPath, '\\');
+        if (p) *(p + 1) = 0;
+
+        if (ReadLocalClientVersion(dirPath, localVer, sizeof(localVer)))
+        {
+            strncpy_s(g_ClientVersion, localVer, 63);
+            haveLocal = true;
+        }
+    }
+
     ServerStatusInfo info;
     if (GetServerStatus(&info))
     {
         g_ServerOnline = info.isOnline;
         g_OnlineCount = info.onlineCount;
-        if (!info.version.empty())
+        if (!haveLocal && !info.version.empty() && _stricmp(info.version.c_str(), "Unknown") != 0)
         {
             strncpy_s(g_ClientVersion, info.version.c_str(), 63);
         }
@@ -205,25 +222,6 @@ DWORD WINAPI CheckServerStatusThread(LPVOID lpParam)
     {
         g_ServerOnline = false;
         // Keep last known version or "0.00"
-    }
-
-    // Try to read local version if still default
-    if (strcmp(g_ClientVersion, "0.00") == 0)
-    {
-        char modulePath[MAX_PATH];
-        if (GetModuleFileNameA(NULL, modulePath, MAX_PATH) != 0)
-        {
-            char dirPath[MAX_PATH];
-            lstrcpynA(dirPath, modulePath, MAX_PATH);
-            char* p = strrchr(dirPath, '\\');
-            if (p) *(p + 1) = 0;
-
-            char localVer[64];
-            if (ReadLocalClientVersion(dirPath, localVer, sizeof(localVer)))
-            {
-                strncpy_s(g_ClientVersion, localVer, 63);
-            }
-        }
     }
 
     if (g_hWnd) InvalidateRect(g_hWnd, &g_rcStatus, FALSE);

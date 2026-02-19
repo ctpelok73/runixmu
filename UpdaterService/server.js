@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
+const net = require('net');
 const multer = require('multer');
 const { generateManifest, saveJson } = require('./updaterService');
 
@@ -37,6 +38,49 @@ const upload = multer({ storage });
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+function loadVersionValue() {
+  const root = config.clientRoot;
+  if (root) {
+    const versionFile = path.join(root, 'version.json');
+    if (fs.existsSync(versionFile)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(versionFile, 'utf8'));
+        if (data && data.version) {
+          return String(data.version);
+        }
+      } catch (e) {
+      }
+    }
+  }
+  if (config.version) return String(config.version);
+  return 'Unknown';
+}
+
+function checkGameServerStatus() {
+  return new Promise((resolve) => {
+    const host = config.gameServerHost;
+    const port = Number(config.gameServerPort);
+    if (!host || !port) {
+      resolve({ online: false, players: 0 });
+      return;
+    }
+    let done = false;
+    const socket = new net.Socket();
+    const finish = (online) => {
+      if (done) return;
+      done = true;
+      socket.destroy();
+      resolve({ online, players: 0 });
+    };
+    const timeoutMs = Number(config.gameServerTimeoutMs || 2000);
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+    socket.connect(port, host);
+  });
+}
 
 function requireAdmin(req, res, next) {
   const token = req.headers['x-admin-token'] || req.query.token;
@@ -85,6 +129,12 @@ app.get('/admin/update', requireAdmin, (req, res) => {
     '<input type="text" name="clientRoot" value="' + String(config.clientRoot || '') + '" style="width: 400px;"></div>' +
     '<div style="margin-top:10px;"><label>Текущая версия:</label><br>' +
     '<input type="text" name="version" value="' + String(config.version || '') + '" style="width: 200px;"></div>' +
+    '<div style="margin-top:10px;"><label>Game Server Host:</label><br>' +
+    '<input type="text" name="gameServerHost" value="' + String(config.gameServerHost || '') + '" style="width: 200px;"></div>' +
+    '<div style="margin-top:10px;"><label>Game Server Port:</label><br>' +
+    '<input type="text" name="gameServerPort" value="' + String(config.gameServerPort || '') + '" style="width: 200px;"></div>' +
+    '<div style="margin-top:10px;"><label>Game Server Timeout ms:</label><br>' +
+    '<input type="text" name="gameServerTimeoutMs" value="' + String(config.gameServerTimeoutMs || '') + '" style="width: 200px;"></div>' +
     '<div style="margin-top:10px;"><button type="submit">Сохранить настройки</button></div>' +
     '</form>' +
     '<form method="post" action="/admin/update/generate?token=' + encodeURIComponent(config.adminToken) + '" style="margin-top:20px;">' +
@@ -139,6 +189,9 @@ app.get('/admin/update', requireAdmin, (req, res) => {
 app.post('/admin/update/config', requireAdmin, (req, res) => {
   config.clientRoot = req.body.clientRoot || config.clientRoot;
   config.version = req.body.version || config.version;
+  config.gameServerHost = req.body.gameServerHost || config.gameServerHost;
+  config.gameServerPort = req.body.gameServerPort || config.gameServerPort;
+  config.gameServerTimeoutMs = req.body.gameServerTimeoutMs || config.gameServerTimeoutMs;
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
   res.redirect('/admin/update?token=' + encodeURIComponent(config.adminToken));
 });
@@ -194,6 +247,12 @@ app.get('/update/files/*splat', (req, res) => {
     return;
   }
   res.sendFile(full);
+});
+
+app.get('/status', async (req, res) => {
+  const status = await checkGameServerStatus();
+  const version = loadVersionValue();
+  res.json({ online: !!status.online, players: status.players || 0, version });
 });
 
 app.listen(config.port, () => {
