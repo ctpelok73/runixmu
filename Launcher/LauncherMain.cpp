@@ -1,1066 +1,724 @@
 #include <windows.h>
-#include <stdint.h>
-#include <wininet.h>
+#include <windowsx.h>
 #include <commctrl.h>
 #include <shellapi.h>
+#include <string>
+#include <fstream>
+#include <stdarg.h>
 
-#pragma pack(push, 1)
-struct LAUNCHER_TOKEN_DATA
-{
-	DWORD Magic;
-	DWORD Version;
-	ULONGLONG Timestamp;
-	DWORD Random;
-	DWORD Crc;
-};
-#pragma pack(pop)
+#include "LauncherUI.h"
+#include "LauncherNetwork.h"
+#include "LauncherToken.h"
 
-static DWORD LauncherToken_HashString(const char* text)
+#pragma comment(lib, "Msimg32.lib")
+
+#define WM_AUTO_UPDATE (WM_APP + 1)
+
+// Global variables for UI
+HWND g_hStatus = NULL;
+HWND g_hProgress = NULL;
+HWND g_hWnd = NULL;
+ULONGLONG g_TotalBytesToDownload = 0;
+ULONGLONG g_BytesDownloaded = 0;
+ULONGLONG g_CurrentFileBytes = 0;
+ULONGLONG g_CurrentFileSize = 0;
+DWORD g_TotalFilesToDownload = 0;
+DWORD g_FilesDownloaded = 0;
+
+// Server Status Globals
+bool g_ServerOnline = false;
+int g_OnlineCount = 0;
+char g_ClientVersion[64] = "0.00";
+
+// Layout Rectangles (Updated for RunixMU Layout)
+// Window Size: 960 x 600
+
+// Top Right Exit Button
+RECT g_rcExit = { 920, 10, 950, 40 };
+
+// Main Banner (Left)
+RECT g_rcBanner = { 30, 80, 580, 430 };
+
+// Sidebar (Right)
+RECT g_rcSidebar = { 600, 80, 930, 560 };
+// Elements inside sidebar (Relative to window)
+RECT g_rcStatus = { 610, 90, 920, 110 }; // Server Status
+RECT g_rcFileProgress = { 610, 140, 920, 160 }; // File Progress Bar
+RECT g_rcProgress = { 610, 190, 920, 210 }; // Total Progress Bar
+RECT g_rcStart = { 610, 250, 920, 310 }; // Start Game Button
+RECT g_rcNews = { 610, 330, 920, 550 }; // News Panel
+
+// Footer Buttons (Bottom Left)
+RECT g_rcRegister = { 30, 450, 160, 490 };
+RECT g_rcWebsite = { 170, 450, 300, 490 };
+RECT g_rcDiscord = { 310, 450, 440, 490 };
+RECT g_rcSupport = { 450, 450, 580, 490 };
+
+// Hover States
+bool g_StartHover = false;
+bool g_ExitHover = false;
+bool g_RegisterHover = false;
+bool g_WebsiteHover = false;
+bool g_DiscordHover = false;
+bool g_SupportHover = false;
+
+bool g_IsUpdating = false;
+
+// Global string for status
+char g_StatusText[256] = "Checking files...";
+char g_FileStatusText[256] = "File: -";
+
+// Speed calculation globals
+DWORD g_SpeedLastTime = 0;
+ULONGLONG g_SpeedLastBytes = 0;
+char g_SpeedText[64] = "Speed: 0.0 MB/s";
+
+// Forward declarations
+LRESULT CALLBACK Launcher_WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+static bool Launcher_RunUpdate(HWND hWnd, bool launchAfter, const char* reason);
+
+void LogLauncher(const char* format, ...)
 {
-	DWORD h = 2166136261u;
-	while (*text)
-	{
-		char c = *text++;
-		if (c >= 'A' && c <= 'Z')
-		{
-			c = char(c - 'A' + 'a');
-		}
-		h ^= (BYTE)c;
-		h *= 16777619u;
-	}
-	return h;
+    char modulePath[MAX_PATH];
+    if (GetModuleFileNameA(NULL, modulePath, MAX_PATH) == 0) return;
+    char dirPath[MAX_PATH];
+    lstrcpynA(dirPath, modulePath, MAX_PATH);
+    char* p = strrchr(dirPath, '\\');
+    if (p) *(p + 1) = 0;
+
+    char logPath[MAX_PATH];
+    wsprintfA(logPath, "%sLauncher.log", dirPath);
+
+    HANDLE hFile = CreateFileA(logPath, FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return;
+
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    char prefix[64];
+    wsprintfA(prefix, "[%04d-%02d-%02d %02d:%02d:%02d] ", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+    DWORD written = 0;
+    WriteFile(hFile, prefix, (DWORD)strlen(prefix), &written, NULL);
+
+    char buffer[1024];
+    va_list args;
+    va_start(args, format);
+    _vsnprintf_s(buffer, sizeof(buffer), _TRUNCATE, format, args);
+    va_end(args);
+
+    WriteFile(hFile, buffer, (DWORD)strlen(buffer), &written, NULL);
+    WriteFile(hFile, "\r\n", 2, &written, NULL);
+    CloseHandle(hFile);
 }
 
-static void LauncherToken_BuildPath(char* outPath, size_t size)
+static bool ReadLocalClientVersion(const char* clientDir, char* outVersion, size_t outSize)
 {
-	char modulePath[MAX_PATH];
-	if (GetModuleFileNameA(NULL, modulePath, MAX_PATH) == 0)
-	{
-		if (size > 0)
-		{
-			outPath[0] = 0;
-		}
-		return;
-	}
-
-	char dirPath[MAX_PATH];
-	lstrcpynA(dirPath, modulePath, MAX_PATH);
-	char* p = strrchr(dirPath, '\\');
-	if (p)
-	{
-		*(p + 1) = 0;
-	}
-
-	DWORD hash = LauncherToken_HashString(dirPath);
-
-	char fileName[64];
-	wsprintfA(fileName, "tex_%08X.bin", hash);
-
-	char dataDir[MAX_PATH];
-	wsprintfA(dataDir, "%s%s", dirPath, "Data\\");
-
-	if (size == 0)
-	{
-		return;
-	}
-
-	lstrcpynA(outPath, dataDir, (int)size);
-	size_t len = strlen(outPath);
-	size_t need = len + strlen(fileName) + 1;
-	if (need > size)
-	{
-		outPath[0] = 0;
-		return;
-	}
-	strcat_s(outPath, size, fileName);
+    if (!outVersion || outSize == 0) return false;
+    outVersion[0] = 0;
+    char path[MAX_PATH];
+    wsprintfA(path, "%sData\\client_version.txt", clientDir);
+    HANDLE hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE)
+    {
+        wsprintfA(path, "%sclient_version.txt", clientDir);
+        hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hFile == INVALID_HANDLE_VALUE) return false;
+    }
+    char buffer[64];
+    DWORD read = 0;
+    if (!ReadFile(hFile, buffer, sizeof(buffer) - 1, &read, NULL))
+    {
+        CloseHandle(hFile);
+        return false;
+    }
+    CloseHandle(hFile);
+    buffer[read] = 0;
+    size_t len = strlen(buffer);
+    while (len > 0 && (buffer[len - 1] == '\r' || buffer[len - 1] == '\n' || buffer[len - 1] == ' ' || buffer[len - 1] == '\t'))
+    {
+        buffer[len - 1] = 0;
+        len--;
+    }
+    if (len + 1 > outSize) return false;
+    memcpy(outVersion, buffer, len + 1);
+    return true;
 }
 
-static void LauncherToken_EncryptBuffer(BYTE* buffer, size_t size)
+static void WriteLocalClientVersion(const char* clientDir, const char* version)
 {
-	DWORD state = 0xA5C3F18Du;
-	for (size_t i = 0; i < size; i++)
-	{
-		state = state * 1664525u + 1013904223u;
-		buffer[i] ^= (BYTE)(state >> 24);
-	}
+    if (!version || !version[0]) return;
+    char dataDir[MAX_PATH];
+    wsprintfA(dataDir, "%sData", clientDir);
+    CreateDirectoryA(dataDir, NULL);
+
+    char dataPath[MAX_PATH];
+    wsprintfA(dataPath, "%sData\\client_version.txt", clientDir);
+    HANDLE hFile = CreateFileA(dataPath, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile != INVALID_HANDLE_VALUE)
+    {
+        DWORD written = 0;
+        WriteFile(hFile, version, (DWORD)strlen(version), &written, NULL);
+        CloseHandle(hFile);
+    }
+
+    char rootPath[MAX_PATH];
+    wsprintfA(rootPath, "%sclient_version.txt", clientDir);
+    hFile = CreateFileA(rootPath, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile != INVALID_HANDLE_VALUE)
+    {
+        DWORD written = 0;
+        WriteFile(hFile, version, (DWORD)strlen(version), &written, NULL);
+        CloseHandle(hFile);
+    }
 }
 
-static DWORD LauncherToken_ComputeCrc(DWORD magic, DWORD version, ULONGLONG timestamp, DWORD random)
+static bool GetFileSizeBytesLocal(const char* path, ULONGLONG* outSize)
 {
-	DWORD crc = 0x1F123BB5u;
-	crc ^= magic;
-	crc = (crc << 5) | (crc >> (32 - 5));
-	crc ^= version;
-	crc = (crc << 7) | (crc >> (32 - 7));
-	crc ^= (DWORD)(timestamp & 0xFFFFFFFFu);
-	crc = (crc << 9) | (crc >> (32 - 9));
-	crc ^= random;
-	return crc;
+    WIN32_FILE_ATTRIBUTE_DATA fad;
+    if (!GetFileAttributesExA(path, GetFileExInfoStandard, &fad)) return false;
+    if (fad.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) return false;
+    *outSize = ((ULONGLONG)fad.nFileSizeHigh << 32) | fad.nFileSizeLow;
+    return true;
 }
 
-static void LauncherToken_Create()
+static bool ScheduleLauncherReplace(const char* currentExe, const char* newExe)
 {
-	char path[MAX_PATH];
-	LauncherToken_BuildPath(path, MAX_PATH);
-	if (path[0] == 0)
-	{
-		return;
-	}
-
-	char dirPath[MAX_PATH];
-	lstrcpynA(dirPath, path, MAX_PATH);
-	char* p = strrchr(dirPath, '\\');
-	if (p)
-	{
-		*p = 0;
-		CreateDirectoryA(dirPath, NULL);
-	}
-
-	LAUNCHER_TOKEN_DATA data;
-	data.Magic = 0x4C544B31u;
-	data.Version = 1;
-	data.Timestamp = GetTickCount64();
-
-	LARGE_INTEGER counter;
-	if (QueryPerformanceCounter(&counter))
-	{
-		data.Random = (DWORD)(counter.LowPart ^ GetTickCount());
-	}
-	else
-	{
-		data.Random = GetTickCount();
-	}
-
-	data.Crc = LauncherToken_ComputeCrc(data.Magic, data.Version, data.Timestamp, data.Random);
-
-	LauncherToken_EncryptBuffer((BYTE*)&data, sizeof(data));
-
-	HANDLE hFile = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_HIDDEN, NULL);
-	if (hFile == INVALID_HANDLE_VALUE)
-	{
-		return;
-	}
-
-	DWORD written = 0;
-	WriteFile(hFile, &data, sizeof(data), &written, NULL);
-	CloseHandle(hFile);
+    char params[2048];
+    sprintf_s(params, "/c ping 127.0.0.1 -n 2 >nul & move /y \"%s\" \"%s\" & start \"\" \"%s\"", newExe, currentExe, currentExe);
+    HINSTANCE hInst = ShellExecuteA(NULL, "runas", "cmd.exe", params, NULL, SW_HIDE);
+    return ((INT_PTR)hInst > 32);
 }
 
-static bool CheckAndUpdateClient(HWND hWnd, const char* clientDir);
-static void Launcher_StartGame(HWND hWnd);
-
-static HWND g_hStatus = NULL;
-static HWND g_hProgress = NULL;
-static ULONGLONG g_TotalBytesToDownload = 0;
-static ULONGLONG g_BytesDownloaded = 0;
-static DWORD g_TotalFilesToDownload = 0;
-static DWORD g_FilesDownloaded = 0;
-
-static void SetStatusText(const char* text)
+// Thread to check server status
+DWORD WINAPI CheckServerStatusThread(LPVOID lpParam)
 {
-	if (g_hStatus)
-	{
-		SetWindowTextA(g_hStatus, text);
-	}
+    ServerStatusInfo info;
+    if (GetServerStatus(&info))
+    {
+        g_ServerOnline = info.isOnline;
+        g_OnlineCount = info.onlineCount;
+        if (!info.version.empty())
+        {
+            strncpy_s(g_ClientVersion, info.version.c_str(), 63);
+        }
+    }
+    else
+    {
+        g_ServerOnline = false;
+        // Keep last known version or "0.00"
+    }
+
+    // Try to read local version if still default
+    if (strcmp(g_ClientVersion, "0.00") == 0)
+    {
+        char modulePath[MAX_PATH];
+        if (GetModuleFileNameA(NULL, modulePath, MAX_PATH) != 0)
+        {
+            char dirPath[MAX_PATH];
+            lstrcpynA(dirPath, modulePath, MAX_PATH);
+            char* p = strrchr(dirPath, '\\');
+            if (p) *(p + 1) = 0;
+
+            char localVer[64];
+            if (ReadLocalClientVersion(dirPath, localVer, sizeof(localVer)))
+            {
+                strncpy_s(g_ClientVersion, localVer, 63);
+            }
+        }
+    }
+
+    if (g_hWnd) InvalidateRect(g_hWnd, &g_rcStatus, FALSE);
+    return 0;
 }
 
-static void ResetProgress()
+void SetLauncherStatus(const char* text)
 {
-	g_TotalBytesToDownload = 0;
-	g_BytesDownloaded = 0;
-	g_TotalFilesToDownload = 0;
-	g_FilesDownloaded = 0;
-	if (g_hProgress)
-	{
-		SendMessageA(g_hProgress, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
-		SendMessageA(g_hProgress, PBM_SETPOS, 0, 0);
-	}
+    strncpy_s(g_StatusText, text, 255);
+    if (g_hWnd) InvalidateRect(g_hWnd, &g_rcFileProgress, FALSE);
+    if (g_hWnd) InvalidateRect(g_hWnd, &g_rcProgress, FALSE);
+    if (g_hWnd) UpdateWindow(g_hWnd); // Force repaint
 }
 
-static void UpdateProgressBar()
+static bool Launcher_RunUpdate(HWND hWnd, bool launchAfter, const char* reason)
 {
-	if (!g_hProgress)
-	{
-		return;
-	}
-	if (g_TotalBytesToDownload == 0)
-	{
-		SendMessageA(g_hProgress, PBM_SETPOS, 0, 0);
-		return;
-	}
-	ULONGLONG percent = 0;
-	if (g_BytesDownloaded >= g_TotalBytesToDownload)
-	{
-		percent = 100;
-	}
-	else
-	{
-		percent = g_BytesDownloaded * 100 / g_TotalBytesToDownload;
-		if (percent > 100)
-		{
-			percent = 100;
-		}
-	}
-	SendMessageA(g_hProgress, PBM_SETPOS, (WPARAM)percent, 0);
+    char modulePath[MAX_PATH];
+    if (GetModuleFileNameA(NULL, modulePath, MAX_PATH) == 0) return false;
+
+    char dirPath[MAX_PATH];
+    lstrcpynA(dirPath, modulePath, MAX_PATH);
+    char* p = strrchr(dirPath, '\\');
+    if (p) *(p + 1) = 0;
+
+    char clientPath[MAX_PATH];
+    wsprintfA(clientPath, "%smain.exe", dirPath);
+    bool clientExists = (GetFileAttributesA(clientPath) != INVALID_FILE_ATTRIBUTES);
+    LogLauncher("Update started. reason=%s clientDir=%s clientExists=%d", reason ? reason : "unknown", dirPath, clientExists ? 1 : 0);
+
+    if (g_IsUpdating) return false;
+    g_IsUpdating = true;
+    g_CurrentFileBytes = 0;
+    g_CurrentFileSize = 0;
+    strcpy_s(g_FileStatusText, "File: -");
+
+    SetLauncherStatus("Checking for updates...");
+    
+    // Process messages to redraw
+    MSG msg;
+    while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+    {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+
+    UpdateStatus status;
+    if (CheckForUpdates(dirPath, &status))
+    {
+        LogLauncher("CheckForUpdates ok. local=%s remote=%s updateRequired=%d", status.currentVersion.c_str(), status.remoteVersion.c_str(), status.isUpdateRequired ? 1 : 0);
+        const size_t manifestMax = 4 * 1024 * 1024;
+        char* manifestBuffer = (char*)HeapAlloc(GetProcessHeap(), 0, manifestMax);
+        if (!manifestBuffer)
+        {
+            SetLauncherStatus("Failed to allocate manifest buffer.");
+            LogLauncher("Failed to allocate manifest buffer.");
+            g_IsUpdating = false;
+            return false;
+        }
+
+        SetLauncherStatus("Downloading update list...");
+        if (!DownloadUpdateManifest(dirPath, manifestBuffer, manifestMax))
+        {
+            SetLauncherStatus("Failed to download manifest.");
+            LogLauncher("DownloadUpdateManifest failed.");
+            HeapFree(GetProcessHeap(), 0, manifestBuffer);
+            g_IsUpdating = false;
+            return false;
+        }
+        LogLauncher("DownloadUpdateManifest ok.");
+
+        bool hasMainInManifest = ManifestHasFile(manifestBuffer, "main.exe");
+        LogLauncher("hasMainInManifest=%d", hasMainInManifest ? 1 : 0);
+        if (!clientExists && !hasMainInManifest)
+        {
+            SetLauncherStatus("Update list missing main.exe");
+            LogLauncher("Update list missing main.exe. Aborting update.");
+            HeapFree(GetProcessHeap(), 0, manifestBuffer);
+            g_IsUpdating = false;
+            return false;
+        }
+
+        bool missingFiles = HasMissingFiles(dirPath, manifestBuffer);
+        bool needUpdate = status.isUpdateRequired || !clientExists || missingFiles;
+        LogLauncher("missingFiles=%d needUpdate=%d", missingFiles ? 1 : 0, needUpdate ? 1 : 0);
+
+        if (needUpdate)
+        {
+            SetLauncherStatus("Downloading updates...");
+            g_IsUpdating = true;
+            
+            g_SpeedLastTime = GetTickCount();
+            g_SpeedLastBytes = 0;
+            strcpy_s(g_SpeedText, "Speed: Calculating...");
+
+            if (ProcessUpdate(dirPath, manifestBuffer))
+            {
+                SetLauncherStatus("Ready to Play");
+                LogLauncher("ProcessUpdate ok.");
+                WriteLocalClientVersion(dirPath, status.remoteVersion.c_str());
+
+                char launcherRelPath[512];
+                DWORD launcherRemoteSize = 0;
+                if (GetManifestFileInfo(manifestBuffer, "Launcher.exe", launcherRelPath, sizeof(launcherRelPath), &launcherRemoteSize))
+                {
+                    ULONGLONG localSize = 0;
+                    if (launcherRemoteSize > 0 && GetFileSizeBytesLocal(modulePath, &localSize) && localSize != launcherRemoteSize)
+                    {
+                        char newLauncherPath[MAX_PATH];
+                        wsprintfA(newLauncherPath, "%sLauncher.exe.new", dirPath);
+                        SetLauncherStatus("Updating launcher...");
+                        LogLauncher("Launcher update available. local=%llu remote=%lu", localSize, launcherRemoteSize);
+                        if (DownloadUpdateFile(dirPath, launcherRelPath, newLauncherPath, launcherRemoteSize))
+                        {
+                            LogLauncher("Launcher update downloaded: %s", newLauncherPath);
+                            if (ScheduleLauncherReplace(modulePath, newLauncherPath))
+                            {
+                                LogLauncher("Launcher update scheduled.");
+                                HeapFree(GetProcessHeap(), 0, manifestBuffer);
+                                g_IsUpdating = false;
+                                PostQuitMessage(0);
+                                return true;
+                            }
+                            LogLauncher("Launcher update schedule failed.");
+                        }
+                        else
+                        {
+                            LogLauncher("Launcher update download failed.");
+                        }
+                    }
+                }
+            }
+            else
+            {
+                SetLauncherStatus("Update failed.");
+                LogLauncher("ProcessUpdate failed.");
+                HeapFree(GetProcessHeap(), 0, manifestBuffer);
+                g_IsUpdating = false;
+                return false;
+            }
+            g_IsUpdating = false;
+
+            clientExists = (GetFileAttributesA(clientPath) != INVALID_FILE_ATTRIBUTES);
+            LogLauncher("After update clientExists=%d", clientExists ? 1 : 0);
+        }
+        else
+        {
+            SetLauncherStatus("Ready to Play");
+            LogLauncher("No update needed.");
+        }
+
+        g_IsUpdating = false;
+        HeapFree(GetProcessHeap(), 0, manifestBuffer);
+    }
+    else
+    {
+        SetLauncherStatus(status.errorMessage.c_str());
+        LogLauncher("CheckForUpdates failed: %s", status.errorMessage.c_str());
+        g_IsUpdating = false;
+        return false;
+    }
+
+    // Launch Game
+    if (!launchAfter)
+    {
+        return true;
+    }
+
+    if (!clientExists)
+    {
+        MessageBoxA(hWnd, "main.exe not found", "Error", MB_OK | MB_ICONERROR);
+        LogLauncher("Launch aborted: main.exe not found.");
+        return false;
+    }
+
+    LauncherToken_Create();
+
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    ZeroMemory(&pi, sizeof(pi));
+    si.cb = sizeof(si);
+
+    if (CreateProcessA(clientPath, NULL, NULL, NULL, FALSE, 0, NULL, dirPath, &si, &pi))
+    {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        LogLauncher("CreateProcess ok. main.exe launched.");
+        PostQuitMessage(0);
+    }
+    else
+    {
+        DWORD err = GetLastError();
+        const char* verb = (err == ERROR_ELEVATION_REQUIRED) ? "runas" : "open";
+        HINSTANCE hInst = ShellExecuteA(hWnd, verb, clientPath, NULL, dirPath, SW_SHOWNORMAL);
+        LogLauncher("CreateProcess failed. error=%lu ShellExecute verb=%s result=%ld", err, verb, (LONG_PTR)hInst);
+        PostQuitMessage(0);
+    }
+    return true;
 }
 
-static void ShowLastErrorMessage(HWND hWnd, const char* title, const char* prefix)
+// Logic to start game
+void Launcher_StartGame(HWND hWnd)
 {
-	DWORD err = GetLastError();
-	char msg[512];
-	wsprintfA(msg, "%s (error %lu)", prefix, (unsigned long)err);
-	MessageBoxA(hWnd, msg, title, MB_OK | MB_ICONERROR);
+    Launcher_RunUpdate(hWnd, true, "start_button");
 }
 
-static void Launcher_StartGame(HWND hWnd)
+void UpdateProgressBar()
 {
-	char modulePath[MAX_PATH];
-	if (GetModuleFileNameA(NULL, modulePath, MAX_PATH) == 0)
-	{
-		MessageBoxA(hWnd, "Cannot get launcher path", "Error", MB_OK | MB_ICONERROR);
-		return;
-	}
-
-	char dirPath[MAX_PATH];
-	lstrcpynA(dirPath, modulePath, MAX_PATH);
-	char* p = strrchr(dirPath, '\\');
-	if (p)
-	{
-		*(p + 1) = 0;
-	}
-
-	if (!CheckAndUpdateClient(hWnd, dirPath))
-	{
-		return;
-	}
-
-	char clientPath[MAX_PATH];
-	wsprintfA(clientPath, "%smain.exe", dirPath);
-
-	if (GetFileAttributesA(clientPath) == INVALID_FILE_ATTRIBUTES)
-	{
-		MessageBoxA(hWnd, "main.exe not found", "Error", MB_OK | MB_ICONERROR);
-		return;
-	}
-
-	LauncherToken_Create();
-
-	STARTUPINFOA si;
-	PROCESS_INFORMATION pi;
-	ZeroMemory(&si, sizeof(si));
-	ZeroMemory(&pi, sizeof(pi));
-	si.cb = sizeof(si);
-
-	BOOL res = CreateProcessA(clientPath, NULL, NULL, NULL, FALSE, 0, NULL, dirPath, &si, &pi);
-	if (!res)
-	{
-		HINSTANCE hInst = ShellExecuteA(hWnd, "open", clientPath, NULL, dirPath, SW_SHOWNORMAL);
-		if ((UINT_PTR)hInst <= 32)
-		{
-			char prefix[512];
-			wsprintfA(prefix, "Failed to start game\n%s", clientPath);
-			ShowLastErrorMessage(hWnd, "Error", prefix);
-			return;
-		}
-		PostQuitMessage(0);
-		return;
-	}
-
-	CloseHandle(pi.hThread);
-	CloseHandle(pi.hProcess);
-
-	PostQuitMessage(0);
-}
-
-static bool HttpGetToBuffer(const char* url, char* buffer, DWORD bufferSize, DWORD* outSize)
-{
-	*outSize = 0;
-	HINTERNET hInternet = InternetOpenA("MULauncher", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
-	if (!hInternet)
-	{
-		return false;
-	}
-	HINTERNET hFile = InternetOpenUrlA(hInternet, url, NULL, 0, INTERNET_FLAG_RELOAD, 0);
-	if (!hFile)
-	{
-		InternetCloseHandle(hInternet);
-		return false;
-	}
-	DWORD total = 0;
-	while (total < bufferSize)
-	{
-		DWORD toRead = bufferSize - total;
-		DWORD read = 0;
-		if (!InternetReadFile(hFile, buffer + total, toRead, &read))
-		{
-			InternetCloseHandle(hFile);
-			InternetCloseHandle(hInternet);
-			return false;
-		}
-		if (read == 0)
-		{
-			break;
-		}
-		total += read;
-	}
-	InternetCloseHandle(hFile);
-	InternetCloseHandle(hInternet);
-	*outSize = total;
-	if (total < bufferSize)
-	{
-		buffer[total] = 0;
-	}
-	return true;
-}
-
-static bool ParseVersionFromJson(const char* json, char* outVersion, size_t outSize)
-{
-	const char* p = strstr(json, "\"version\"");
-	if (!p)
-	{
-		return false;
-	}
-	p = strchr(p, ':');
-	if (!p)
-	{
-		return false;
-	}
-	p++;
-	while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')
-	{
-		p++;
-	}
-	if (*p == '\"')
-	{
-		p++;
-		const char* start = p;
-		while (*p && *p != '\"')
-		{
-			p++;
-		}
-		size_t len = (size_t)(p - start);
-		if (len + 1 > outSize)
-		{
-			return false;
-		}
-		memcpy(outVersion, start, len);
-		outVersion[len] = 0;
-		return true;
-	}
-	return false;
-}
-
-static bool LoadLocalVersion(const char* clientDir, char* outVersion, size_t outSize)
-{
-	char path[MAX_PATH];
-	wsprintfA(path, "%sData\\client_version.txt", clientDir);
-	HANDLE hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-	if (hFile == INVALID_HANDLE_VALUE)
-	{
-		outVersion[0] = 0;
-		return false;
-	}
-	char buffer[64];
-	DWORD read = 0;
-	if (!ReadFile(hFile, buffer, sizeof(buffer) - 1, &read, NULL))
-	{
-		CloseHandle(hFile);
-		outVersion[0] = 0;
-		return false;
-	}
-	CloseHandle(hFile);
-	buffer[read] = 0;
-	size_t len = strlen(buffer);
-	while (len > 0 && (buffer[len - 1] == '\r' || buffer[len - 1] == '\n' || buffer[len - 1] == ' ' || buffer[len - 1] == '\t'))
-	{
-		buffer[len - 1] = 0;
-		len--;
-	}
-	if (len + 1 > outSize)
-	{
-		outVersion[0] = 0;
-		return false;
-	}
-	memcpy(outVersion, buffer, len + 1);
-	return true;
-}
-
-static bool SaveLocalVersion(const char* clientDir, const char* version)
-{
-	char path[MAX_PATH];
-	wsprintfA(path, "%sData\\client_version.txt", clientDir);
-	char dirPath[MAX_PATH];
-	lstrcpynA(dirPath, path, MAX_PATH);
-	char* p = strrchr(dirPath, '\\');
-	if (p)
-	{
-		*p = 0;
-		CreateDirectoryA(dirPath, NULL);
-	}
-	HANDLE hFile = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-	if (hFile == INVALID_HANDLE_VALUE)
-	{
-		return false;
-	}
-	DWORD len = (DWORD)strlen(version);
-	DWORD written = 0;
-	BOOL ok = WriteFile(hFile, version, len, &written, NULL);
-	CloseHandle(hFile);
-	return ok && written == len;
-}
-
-static bool VersionsEqual(const char* a, const char* b)
-{
-	if (!a || !b)
-	{
-		return false;
-	}
-	return lstrcmpA(a, b) == 0;
-}
-
-static void BuildLocalPath(char* outPath, size_t outSize, const char* clientDir, const char* relPath)
-{
-	if (outSize == 0)
-	{
-		return;
-	}
-	outPath[0] = 0;
-	size_t dirLen = strlen(clientDir);
-	if (dirLen + 1 >= outSize)
-	{
-		return;
-	}
-	memcpy(outPath, clientDir, dirLen);
-	outPath[dirLen] = 0;
-	const char* src = relPath;
-	char temp[512];
-	size_t pos = 0;
-	while (*src && pos + 1 < sizeof(temp))
-	{
-		char c = *src++;
-		if (c == '/')
-		{
-			c = '\\';
-		}
-		temp[pos++] = c;
-	}
-	temp[pos] = 0;
-	size_t need = dirLen + pos + 1;
-	if (need > outSize)
-	{
-		outPath[0] = 0;
-		return;
-	}
-	strcat_s(outPath, outSize, temp);
-}
-
-static void EnsureDirectoriesForPath(const char* fullPath)
-{
-	char dirPath[MAX_PATH * 2];
-	lstrcpynA(dirPath, fullPath, sizeof(dirPath));
-	size_t len = strlen(dirPath);
-	for (size_t i = 0; i < len; i++)
-	{
-		if (dirPath[i] == '\\' || dirPath[i] == '/')
-		{
-			char ch = dirPath[i];
-			dirPath[i] = 0;
-			if (dirPath[0] != 0)
-			{
-				CreateDirectoryA(dirPath, NULL);
-			}
-			dirPath[i] = ch;
-		}
-	}
-}
-
-static bool DownloadFileFromServer(const char* baseUrl, const char* relPath, const char* localPath, DWORD remoteSize)
-{
-	char url[1024];
-	if (strlen(baseUrl) + strlen("/update/files/") + strlen(relPath) + 1 > sizeof(url))
-	{
-		return false;
-	}
-	wsprintfA(url, "%s/update/files/%s", baseUrl, relPath);
-
-	char tempPath[MAX_PATH * 2];
-	lstrcpynA(tempPath, localPath, sizeof(tempPath));
-	size_t tempLen = strlen(tempPath);
-	if (tempLen + 10 >= sizeof(tempPath))
-	{
-		return false;
-	}
-	strcat_s(tempPath, sizeof(tempPath), ".download");
-
-	ULONGLONG existing = 0;
-	WIN32_FILE_ATTRIBUTE_DATA fadTemp;
-	if (GetFileAttributesExA(tempPath, GetFileExInfoStandard, &fadTemp))
-	{
-		existing = ((ULONGLONG)fadTemp.nFileSizeHigh << 32) | fadTemp.nFileSizeLow;
-	}
-	if (existing > (ULONGLONG)remoteSize)
-	{
-		DeleteFileA(tempPath);
-		existing = 0;
-	}
-
-	HINTERNET hInternet = InternetOpenA("MULauncher", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
-	if (!hInternet)
-	{
-		return false;
-	}
-
-	const char* headers = NULL;
-	char headersBuf[64];
-	DWORD headersLen = 0;
-	DWORD offset = (DWORD)existing;
-	if (offset > 0 && offset < remoteSize)
-	{
-		wsprintfA(headersBuf, "Range: bytes=%lu-\r\n", offset);
-		headers = headersBuf;
-		headersLen = (DWORD)-1;
-	}
-
-	HINTERNET hFile = InternetOpenUrlA(hInternet, url, headers, headers ? headersLen : 0, INTERNET_FLAG_RELOAD, 0);
-	if (!hFile)
-	{
-		InternetCloseHandle(hInternet);
-		return false;
-	}
-
-	EnsureDirectoriesForPath(localPath);
-	DWORD creationDisposition = offset > 0 ? OPEN_EXISTING : CREATE_ALWAYS;
-	HANDLE hOut = CreateFileA(tempPath, GENERIC_WRITE, 0, NULL, creationDisposition, FILE_ATTRIBUTE_NORMAL, NULL);
-	if (hOut == INVALID_HANDLE_VALUE)
-	{
-		InternetCloseHandle(hFile);
-		InternetCloseHandle(hInternet);
-		return false;
-	}
-	if (offset > 0)
-	{
-		if (SetFilePointer(hOut, offset, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR)
-		{
-			CloseHandle(hOut);
-			InternetCloseHandle(hFile);
-			InternetCloseHandle(hInternet);
-			return false;
-		}
-	}
-
-	char buffer[8192];
-	DWORD read = 0;
-	BOOL ok = TRUE;
-	for (;;)
-	{
-		if (!InternetReadFile(hFile, buffer, sizeof(buffer), &read))
-		{
-			ok = FALSE;
-			break;
-		}
-		if (read == 0)
-		{
-			break;
-		}
-		DWORD written = 0;
-		if (!WriteFile(hOut, buffer, read, &written, NULL) || written != read)
-		{
-			ok = FALSE;
-			break;
-		}
-		g_BytesDownloaded += read;
-		UpdateProgressBar();
-	}
-
-	CloseHandle(hOut);
-	InternetCloseHandle(hFile);
-	InternetCloseHandle(hInternet);
-
-	if (!ok)
-	{
-		return false;
-	}
-
-	WIN32_FILE_ATTRIBUTE_DATA fadFinalTemp;
-	if (!GetFileAttributesExA(tempPath, GetFileExInfoStandard, &fadFinalTemp))
-	{
-		return false;
-	}
-	ULONGLONG finalSize = ((ULONGLONG)fadFinalTemp.nFileSizeHigh << 32) | fadFinalTemp.nFileSizeLow;
-	if (finalSize != (ULONGLONG)remoteSize)
-	{
-		return false;
-	}
-
-	DeleteFileA(localPath);
-	if (!MoveFileExA(tempPath, localPath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED))
-	{
-		return false;
-	}
-
-	return true;
-}
-
-static bool EnsureFileUpdated(const char* baseUrl, const char* clientDir, const char* relPath, DWORD remoteSize)
-{
-	char localPath[MAX_PATH * 2];
-	BuildLocalPath(localPath, sizeof(localPath), clientDir, relPath);
-	if (localPath[0] == 0)
-	{
-		return false;
-	}
-
-	WIN32_FILE_ATTRIBUTE_DATA fad;
-	if (GetFileAttributesExA(localPath, GetFileExInfoStandard, &fad))
-	{
-		ULONGLONG sz = ((ULONGLONG)fad.nFileSizeHigh << 32) | fad.nFileSizeLow;
-		if (sz == (ULONGLONG)remoteSize)
-		{
-			return true;
-		}
-	}
-
-	if (!DownloadFileFromServer(baseUrl, relPath, localPath, remoteSize))
-	{
-		return false;
-	}
-
-	return true;
-}
-
-static bool ComputeManifestTotals(const char* json, const char* clientDir, ULONGLONG* outBytes, DWORD* outFiles)
-{
-	const char* p = json;
-	*outBytes = 0;
-	*outFiles = 0;
-	while (1)
-	{
-		const char* pathKey = strstr(p, "\"path\"");
-		if (!pathKey)
-		{
-			break;
-		}
-		const char* colon = strchr(pathKey, ':');
-		if (!colon)
-		{
-			return false;
-		}
-		const char* q = colon + 1;
-		while (*q == ' ' || *q == '\t' || *q == '\r' || *q == '\n')
-		{
-			q++;
-		}
-		if (*q != '\"')
-		{
-			return false;
-		}
-		q++;
-		const char* start = q;
-		while (*q && *q != '\"')
-		{
-			q++;
-		}
-		if (!*q)
-		{
-			return false;
-		}
-		size_t pathLen = (size_t)(q - start);
-		if (pathLen == 0 || pathLen >= 260)
-		{
-			return false;
-		}
-		char relPath[260];
-		memcpy(relPath, start, pathLen);
-		relPath[pathLen] = 0;
-
-		const char* sizeKey = strstr(q, "\"size\"");
-		if (!sizeKey)
-		{
-			return false;
-		}
-		const char* sizeColon = strchr(sizeKey, ':');
-		if (!sizeColon)
-		{
-			return false;
-		}
-		const char* s = sizeColon + 1;
-		while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
-		{
-			s++;
-		}
-		if (*s < '0' || *s > '9')
-		{
-			return false;
-		}
-		DWORD remoteSize = 0;
-		while (*s >= '0' && *s <= '9')
-		{
-			DWORD digit = (DWORD)(*s - '0');
-			if (remoteSize > 429496729)
-			{
-				return false;
-			}
-			remoteSize = remoteSize * 10 + digit;
-			s++;
-		}
-
-		char localPath[MAX_PATH * 2];
-		BuildLocalPath(localPath, sizeof(localPath), clientDir, relPath);
-		if (localPath[0] == 0)
-		{
-			return false;
-		}
-
-		ULONGLONG existingFinal = 0;
-		WIN32_FILE_ATTRIBUTE_DATA fadFinal;
-		if (GetFileAttributesExA(localPath, GetFileExInfoStandard, &fadFinal))
-		{
-			existingFinal = ((ULONGLONG)fadFinal.nFileSizeHigh << 32) | fadFinal.nFileSizeLow;
-		}
-		if (existingFinal == (ULONGLONG)remoteSize)
-		{
-			p = q;
-			continue;
-		}
-
-		char tempPath[MAX_PATH * 2];
-		lstrcpynA(tempPath, localPath, sizeof(tempPath));
-		size_t tempLen = strlen(tempPath);
-		if (tempLen + 10 >= sizeof(tempPath))
-		{
-			return false;
-		}
-		strcat_s(tempPath, sizeof(tempPath), ".download");
-
-		ULONGLONG existingTemp = 0;
-		WIN32_FILE_ATTRIBUTE_DATA fadTemp;
-		if (GetFileAttributesExA(tempPath, GetFileExInfoStandard, &fadTemp))
-		{
-			existingTemp = ((ULONGLONG)fadTemp.nFileSizeHigh << 32) | fadTemp.nFileSizeLow;
-		}
-		if (existingTemp >= (ULONGLONG)remoteSize)
-		{
-			existingTemp = 0;
-		}
-
-		ULONGLONG need = (ULONGLONG)remoteSize;
-		if (existingTemp > 0 && existingTemp < (ULONGLONG)remoteSize)
-		{
-			need = (ULONGLONG)remoteSize - existingTemp;
-		}
-
-		*outBytes += need;
-		if (need > 0)
-		{
-			(*outFiles)++;
-		}
-
-		p = q;
-	}
-
-	return true;
-}
-
-static bool ProcessManifest(const char* json, const char* baseUrl, const char* clientDir)
-{
-	const char* p = json;
-	while (1)
-	{
-		const char* pathKey = strstr(p, "\"path\"");
-		if (!pathKey)
-		{
-			break;
-		}
-		const char* colon = strchr(pathKey, ':');
-		if (!colon)
-		{
-			return false;
-		}
-		const char* q = colon + 1;
-		while (*q == ' ' || *q == '\t' || *q == '\r' || *q == '\n')
-		{
-			q++;
-		}
-		if (*q != '\"')
-		{
-			return false;
-		}
-		q++;
-		const char* start = q;
-		while (*q && *q != '\"')
-		{
-			q++;
-		}
-		if (!*q)
-		{
-			return false;
-		}
-		size_t pathLen = (size_t)(q - start);
-		if (pathLen == 0 || pathLen >= 260)
-		{
-			return false;
-		}
-		char relPath[260];
-		memcpy(relPath, start, pathLen);
-		relPath[pathLen] = 0;
-
-		const char* sizeKey = strstr(q, "\"size\"");
-		if (!sizeKey)
-		{
-			return false;
-		}
-		const char* sizeColon = strchr(sizeKey, ':');
-		if (!sizeColon)
-		{
-			return false;
-		}
-		const char* s = sizeColon + 1;
-		while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
-		{
-			s++;
-		}
-		if (*s < '0' || *s > '9')
-		{
-			return false;
-		}
-		DWORD remoteSize = 0;
-		while (*s >= '0' && *s <= '9')
-		{
-			DWORD digit = (DWORD)(*s - '0');
-			if (remoteSize > 429496729)
-			{
-				return false;
-			}
-			remoteSize = remoteSize * 10 + digit;
-			s++;
-		}
-
-		if (!EnsureFileUpdated(baseUrl, clientDir, relPath, remoteSize))
-		{
-			return false;
-		}
-
-		p = q;
-	}
-
-	return true;
-}
-
-static bool CheckAndUpdateClient(HWND hWnd, const char* clientDir)
-{
-	const char* baseUrl = "http://update.runixmu.online:4000";
-	char versionUrl[512];
-	wsprintfA(versionUrl, "%s/update/version", baseUrl);
-
-	char versionBuffer[1024];
-	DWORD size = 0;
-	SetStatusText("Checking for updates...");
-	ResetProgress();
-
-	if (!HttpGetToBuffer(versionUrl, versionBuffer, sizeof(versionBuffer) - 1, &size))
-	{
-		MessageBoxA(hWnd, "Failed to retrieve update version", "Error", MB_OK | MB_ICONERROR);
-		return false;
-	}
-
-	char remoteVersion[64];
-	if (!ParseVersionFromJson(versionBuffer, remoteVersion, sizeof(remoteVersion)))
-	{
-		MessageBoxA(hWnd, "Invalid update version format", "Error", MB_OK | MB_ICONERROR);
-		return false;
-	}
-
-	char localVersion[64];
-	bool haveLocal = LoadLocalVersion(clientDir, localVersion, sizeof(localVersion));
-	if (haveLocal && VersionsEqual(localVersion, remoteVersion))
-	{
-		SetStatusText("Client is up to date");
-		return true;
-	}
-
-	wsprintfA(versionBuffer, "Client update to version %s will be installed", remoteVersion);
-	MessageBoxA(hWnd, versionBuffer, "Update", MB_OK | MB_ICONINFORMATION);
-
-	char manifestUrl[512];
-	wsprintfA(manifestUrl, "%s/update/manifest", baseUrl);
-
-	const DWORD manifestMax = 512 * 1024;
-	char* manifestBuffer = (char*)HeapAlloc(GetProcessHeap(), 0, manifestMax);
-	if (!manifestBuffer)
-	{
-		MessageBoxA(hWnd, "Not enough memory to load manifest", "Error", MB_OK | MB_ICONERROR);
-		return false;
-	}
-
-	DWORD manifestSize = 0;
-	bool ok = HttpGetToBuffer(manifestUrl, manifestBuffer, manifestMax - 1, &manifestSize);
-	if (!ok)
-	{
-		HeapFree(GetProcessHeap(), 0, manifestBuffer);
-		MessageBoxA(hWnd, "Failed to download update manifest", "Error", MB_OK | MB_ICONERROR);
-		return false;
-	}
-	if (manifestSize >= manifestMax)
-	{
-		HeapFree(GetProcessHeap(), 0, manifestBuffer);
-		MessageBoxA(hWnd, "Update manifest is too large", "Error", MB_OK | MB_ICONERROR);
-		return false;
-	}
-	manifestBuffer[manifestSize] = 0;
-
-	ULONGLONG totalBytes = 0;
-	DWORD totalFiles = 0;
-	if (!ComputeManifestTotals(manifestBuffer, clientDir, &totalBytes, &totalFiles))
-	{
-		HeapFree(GetProcessHeap(), 0, manifestBuffer);
-		MessageBoxA(hWnd, "Invalid update manifest format", "Error", MB_OK | MB_ICONERROR);
-		return false;
-	}
-	g_TotalBytesToDownload = totalBytes;
-	g_TotalFilesToDownload = totalFiles;
-	g_BytesDownloaded = 0;
-	g_FilesDownloaded = 0;
-	if (g_hProgress)
-	{
-		SendMessageA(g_hProgress, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
-		SendMessageA(g_hProgress, PBM_SETPOS, 0, 0);
-	}
-	SetStatusText("Downloading updates...");
-
-	if (!ProcessManifest(manifestBuffer, baseUrl, clientDir))
-	{
-		HeapFree(GetProcessHeap(), 0, manifestBuffer);
-		MessageBoxA(hWnd, "Error while applying client update", "Error", MB_OK | MB_ICONERROR);
-		return false;
-	}
-
-	HeapFree(GetProcessHeap(), 0, manifestBuffer);
-
-	if (!SaveLocalVersion(clientDir, remoteVersion))
-	{
-		MessageBoxA(hWnd, "Failed to save local client version", "Error", MB_OK | MB_ICONERROR);
-		return false;
-	}
-
-	return true;
-}
-
-static LRESULT CALLBACK Launcher_WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-	switch (msg)
-	{
-	case WM_CREATE:
-	{
-		HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
-
-		HWND hTitle = CreateWindowExA(0, "STATIC", "MU Online Launcher", WS_CHILD | WS_VISIBLE | SS_CENTER,
-			20, 20, 360, 30, hWnd, NULL, GetModuleHandle(NULL), NULL);
-		if (hTitle && hFont)
-		{
-			SendMessage(hTitle, WM_SETFONT, (WPARAM)hFont, TRUE);
-		}
-
-		HWND hPlay = CreateWindowExA(0, "BUTTON", "Play", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-			120, 100, 160, 40, hWnd, (HMENU)1, GetModuleHandle(NULL), NULL);
-		if (hPlay && hFont)
-		{
-			SendMessage(hPlay, WM_SETFONT, (WPARAM)hFont, TRUE);
-		}
-
-		HWND hExit = CreateWindowExA(0, "BUTTON", "Exit", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-			120, 160, 160, 40, hWnd, (HMENU)2, GetModuleHandle(NULL), NULL);
-		if (hExit && hFont)
-		{
-			SendMessage(hExit, WM_SETFONT, (WPARAM)hFont, TRUE);
-		}
-
-		g_hStatus = CreateWindowExA(0, "STATIC", "", WS_CHILD | WS_VISIBLE | SS_LEFT,
-			20, 210, 360, 20, hWnd, (HMENU)101, GetModuleHandle(NULL), NULL);
-		if (g_hStatus && hFont)
-		{
-			SendMessage(g_hStatus, WM_SETFONT, (WPARAM)hFont, TRUE);
-		}
-
-		g_hProgress = CreateWindowExA(0, PROGRESS_CLASSA, NULL, WS_CHILD | WS_VISIBLE,
-			20, 240, 360, 20, hWnd, (HMENU)102, GetModuleHandle(NULL), NULL);
-
-		ResetProgress();
-	}
-	break;
-	case WM_COMMAND:
-	{
-		UINT id = LOWORD(wParam);
-		if (id == 1)
-		{
-			Launcher_StartGame(hWnd);
-		}
-		else if (id == 2)
-		{
-			PostQuitMessage(0);
-		}
-	}
-	break;
-	case WM_DESTROY:
-		PostQuitMessage(0);
-		break;
-	default:
-		return DefWindowProc(hWnd, msg, wParam, lParam);
-	}
-	return 0;
+    // Pump messages to keep UI responsive
+    MSG msg;
+    while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+    {
+        if (msg.message == WM_QUIT)
+        {
+            ExitProcess(0);
+        }
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+
+    // Calculate Speed
+    DWORD curTime = GetTickCount();
+    if (curTime - g_SpeedLastTime >= 1000) // Update every second
+    {
+        ULONGLONG diffBytes = g_BytesDownloaded - g_SpeedLastBytes;
+        double speedMB = (double)diffBytes / (1024.0 * 1024.0);
+        
+        sprintf_s(g_SpeedText, "Speed: %.1f MB/s", speedMB);
+        
+        g_SpeedLastTime = curTime;
+        g_SpeedLastBytes = g_BytesDownloaded;
+    }
+
+    if (g_hWnd) 
+    {
+        InvalidateRect(g_hWnd, &g_rcFileProgress, FALSE);
+        InvalidateRect(g_hWnd, &g_rcProgress, FALSE);
+        UpdateWindow(g_hWnd); // Force immediate repaint
+    }
 }
 
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
-	INITCOMMONCONTROLSEX icc;
-	icc.dwSize = sizeof(icc);
-	icc.dwICC = ICC_PROGRESS_CLASS;
-	InitCommonControlsEx(&icc);
+    WNDCLASSEXA wc = { 0 };
+    wc.cbSize = sizeof(wc);
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc = Launcher_WndProc;
+    wc.hInstance = hInstance;
+    wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    wc.lpszClassName = "RunixMuLauncher";
 
-	WNDCLASSEXA wc;
-	ZeroMemory(&wc, sizeof(wc));
-	wc.cbSize = sizeof(wc);
-	wc.style = CS_HREDRAW | CS_VREDRAW;
-	wc.lpfnWndProc = Launcher_WndProc;
-	wc.hInstance = hInstance;
-	wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
-	wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-	wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
-	wc.lpszClassName = "MuLauncherWindowClass";
-	wc.hIconSm = wc.hIcon;
+    if (!RegisterClassExA(&wc)) return 0;
 
-	if (!RegisterClassExA(&wc))
-	{
-		return 0;
-	}
+    int screenW = GetSystemMetrics(SM_CXSCREEN);
+    int screenH = GetSystemMetrics(SM_CYSCREEN);
+    int x = (screenW - LAUNCHER_WIDTH) / 2;
+    int y = (screenH - LAUNCHER_HEIGHT) / 2;
 
-	int width = 400;
-	int height = 320;
+    // WS_POPUP for frameless window
+    g_hWnd = CreateWindowExA(WS_EX_APPWINDOW, wc.lpszClassName, LAUNCHER_TITLE,
+        WS_POPUP | WS_VISIBLE,
+        x, y, LAUNCHER_WIDTH, LAUNCHER_HEIGHT, NULL, NULL, hInstance, NULL);
 
-	RECT rc;
-	SystemParametersInfo(SPI_GETWORKAREA, 0, &rc, 0);
-	int screenW = rc.right - rc.left;
-	int screenH = rc.bottom - rc.top;
-	int x = rc.left + (screenW - width) / 2;
-	int y = rc.top + (screenH - height) / 2;
+    if (!g_hWnd) return 0;
 
-	HWND hWnd = CreateWindowExA(WS_EX_APPWINDOW, wc.lpszClassName, "MU Launcher",
-		WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-		x, y, width, height, NULL, NULL, hInstance, NULL);
+    ShowWindow(g_hWnd, nCmdShow);
+    UpdateWindow(g_hWnd);
+    LogLauncher("Launcher started.");
+    PostMessage(g_hWnd, WM_AUTO_UPDATE, 0, 0);
 
-	if (!hWnd)
-	{
-		return 0;
-	}
+    // Initial server status check
+    CreateThread(NULL, 0, CheckServerStatusThread, NULL, 0, NULL);
 
-	ShowWindow(hWnd, nCmdShow);
-	UpdateWindow(hWnd);
+    // Timer for periodic updates (every 60 seconds)
+    SetTimer(g_hWnd, 1, 60000, NULL);
 
-	MSG msg;
-	while (GetMessage(&msg, NULL, 0, 0))
-	{
-		TranslateMessage(&msg);
-		DispatchMessage(&msg);
-	}
+    MSG msg;
+    while (GetMessage(&msg, NULL, 0, 0))
+    {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
 
-	return (int)msg.wParam;
+    return (int)msg.wParam;
+}
+
+LRESULT CALLBACK Launcher_WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    switch (msg)
+    {
+    case WM_PAINT:
+    {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+        
+        // Double buffering
+        HDC hMemDC = CreateCompatibleDC(hdc);
+        HBITMAP hMemBitmap = CreateCompatibleBitmap(hdc, LAUNCHER_WIDTH, LAUNCHER_HEIGHT);
+        SelectObject(hMemDC, hMemBitmap);
+
+        RECT rcClient;
+        GetClientRect(hWnd, &rcClient);
+
+        // 1. Draw Background (Space)
+        DrawSpaceBackground(hMemDC, &rcClient);
+        
+        // 2. Draw Main Metallic Frame
+        DrawMetallicFrame(hMemDC, &rcClient, 6);
+
+        // 3. Draw Title (Top Center)
+        RECT rcTitle = { 0, 20, LAUNCHER_WIDTH, 70 };
+        SetBkMode(hMemDC, TRANSPARENT);
+        SetTextColor(hMemDC, COL_NEON_BLUE); // Neon Blue Title
+        // Use a large decorative font
+        HFONT hTitleFont = CreateFontA(52, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, "Cinzel Decorative");
+        if (!hTitleFont) hTitleFont = CreateFontA(52, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, "Times New Roman");
+        HFONT hOldFont = (HFONT)SelectObject(hMemDC, hTitleFont);
+        
+        // Draw Shadow first
+        RECT rcShadow = rcTitle;
+        OffsetRect(&rcShadow, 2, 2);
+        SetTextColor(hMemDC, RGB(0, 0, 0));
+        DrawTextA(hMemDC, LAUNCHER_TITLE, -1, &rcShadow, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        
+        // Draw Main Text
+        SetTextColor(hMemDC, COL_NEON_BLUE);
+        DrawTextA(hMemDC, LAUNCHER_TITLE, -1, &rcTitle, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        
+        SelectObject(hMemDC, hOldFont);
+        DeleteObject(hTitleFont);
+
+        // 4. Draw Banner Area (Left)
+        DrawBannerArea(hMemDC, &g_rcBanner);
+
+        // 5. Draw Footer Buttons (Left)
+        DrawNeonButton(hMemDC, &g_rcRegister, "Register", g_RegisterHover, ButtonStyle::Secondary);
+        DrawNeonButton(hMemDC, &g_rcWebsite, "Website", g_WebsiteHover, ButtonStyle::Secondary);
+        DrawNeonButton(hMemDC, &g_rcDiscord, "Discord", g_DiscordHover, ButtonStyle::Secondary);
+        DrawNeonButton(hMemDC, &g_rcSupport, "Support", g_SupportHover, ButtonStyle::Secondary);
+
+        // 6. Draw Sidebar Content (Right)
+        // Status
+        DrawStatusPanel(hMemDC, &g_rcStatus, g_ServerOnline, g_OnlineCount, g_ClientVersion);
+        
+        float fileProgress = 0.0f;
+        if (g_CurrentFileSize > 0)
+            fileProgress = (float)((double)g_CurrentFileBytes / (double)g_CurrentFileSize * 100.0);
+        
+        DrawProgressBarModern(hMemDC, &g_rcFileProgress, fileProgress, g_FileStatusText, "");
+
+        float progress = 0.0f;
+        if (g_TotalBytesToDownload > 0)
+            progress = (float)((double)g_BytesDownloaded / (double)g_TotalBytesToDownload * 100.0);
+        
+        DrawProgressBarModern(hMemDC, &g_rcProgress, progress, g_StatusText, g_SpeedText);
+        
+        // Start Button
+        DrawNeonButton(hMemDC, &g_rcStart, "START GAME", g_StartHover, ButtonStyle::Primary);
+        
+        // News Panel
+        DrawNewsPanel(hMemDC, &g_rcNews);
+
+        // 7. Exit Button
+        DrawNeonButton(hMemDC, &g_rcExit, "X", g_ExitHover, ButtonStyle::Icon);
+
+        // Blit to screen
+        BitBlt(hdc, 0, 0, LAUNCHER_WIDTH, LAUNCHER_HEIGHT, hMemDC, 0, 0, SRCCOPY);
+
+        DeleteObject(hMemBitmap);
+        DeleteDC(hMemDC);
+        EndPaint(hWnd, &ps);
+    }
+    break;
+
+    case WM_MOUSEMOVE:
+    {
+        POINT pt = { LOWORD(lParam), HIWORD(lParam) };
+        bool prevStart = g_StartHover;
+        bool prevExit = g_ExitHover;
+        bool prevReg = g_RegisterHover;
+        bool prevWeb = g_WebsiteHover;
+        bool prevDisc = g_DiscordHover;
+        bool prevSupp = g_SupportHover;
+
+        g_StartHover = PtInRect(&g_rcStart, pt);
+        g_ExitHover = PtInRect(&g_rcExit, pt);
+        g_RegisterHover = PtInRect(&g_rcRegister, pt);
+        g_WebsiteHover = PtInRect(&g_rcWebsite, pt);
+        g_DiscordHover = PtInRect(&g_rcDiscord, pt);
+        g_SupportHover = PtInRect(&g_rcSupport, pt);
+
+        if (prevStart != g_StartHover || prevExit != g_ExitHover ||
+            prevReg != g_RegisterHover || prevWeb != g_WebsiteHover ||
+            prevDisc != g_DiscordHover || prevSupp != g_SupportHover)
+        {
+            InvalidateRect(hWnd, NULL, FALSE);
+            
+            TRACKMOUSEEVENT tme;
+            tme.cbSize = sizeof(tme);
+            tme.dwFlags = TME_LEAVE;
+            tme.hwndTrack = hWnd;
+            TrackMouseEvent(&tme);
+        }
+    }
+    break;
+
+    case WM_MOUSELEAVE:
+        g_StartHover = false;
+        g_ExitHover = false;
+        g_RegisterHover = false;
+        g_WebsiteHover = false;
+        g_DiscordHover = false;
+        g_SupportHover = false;
+        InvalidateRect(hWnd, NULL, FALSE);
+        break;
+
+    case WM_LBUTTONDOWN:
+    {
+        POINT pt = { LOWORD(lParam), HIWORD(lParam) };
+        if (PtInRect(&g_rcStart, pt) && !g_IsUpdating)
+        {
+            Launcher_StartGame(hWnd);
+        }
+        else if (PtInRect(&g_rcExit, pt))
+        {
+            PostQuitMessage(0);
+        }
+        else if (PtInRect(&g_rcRegister, pt))
+        {
+            ShellExecuteA(NULL, "open", "http://runixmu.online/register", NULL, NULL, SW_SHOWNORMAL);
+        }
+        else if (PtInRect(&g_rcWebsite, pt))
+        {
+            ShellExecuteA(NULL, "open", "http://runixmu.online", NULL, NULL, SW_SHOWNORMAL);
+        }
+        else if (PtInRect(&g_rcDiscord, pt))
+        {
+            ShellExecuteA(NULL, "open", "https://discord.gg/runixmu", NULL, NULL, SW_SHOWNORMAL);
+        }
+        else if (PtInRect(&g_rcSupport, pt))
+        {
+            ShellExecuteA(NULL, "open", "http://runixmu.online/support", NULL, NULL, SW_SHOWNORMAL);
+        }
+        else
+        {
+            SendMessage(hWnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+        }
+    }
+    break;
+
+    case WM_TIMER:
+        if (wParam == 1)
+        {
+            CreateThread(NULL, 0, CheckServerStatusThread, NULL, 0, NULL);
+        }
+        break;
+
+    case WM_AUTO_UPDATE:
+        Launcher_RunUpdate(hWnd, false, "auto_start");
+        break;
+
+    case WM_NCHITTEST:
+    {
+        // Default processing first
+        LRESULT hit = DefWindowProc(hWnd, msg, wParam, lParam);
+        
+        // Check buttons
+        POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        POINT clientPt = pt;
+        ScreenToClient(hWnd, &clientPt);
+
+        if (PtInRect(&g_rcStart, clientPt) || PtInRect(&g_rcExit, clientPt) ||
+            PtInRect(&g_rcRegister, clientPt) || PtInRect(&g_rcWebsite, clientPt) ||
+            PtInRect(&g_rcDiscord, clientPt) || PtInRect(&g_rcSupport, clientPt))
+        {
+            return HTCLIENT;
+        }
+
+        // If not over a button, and we are in client area, return HTCAPTION to allow dragging
+        if (hit == HTCLIENT)
+        {
+            return HTCAPTION;
+        }
+        return hit;
+    }
+    break;
+
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        break;
+
+    default:
+        return DefWindowProc(hWnd, msg, wParam, lParam);
+    }
+    return 0;
 }
