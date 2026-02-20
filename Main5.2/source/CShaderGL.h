@@ -3,7 +3,9 @@
 #ifdef SHADER_VERSION_TEST
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp> // Necesario para glm::value_ptr
+#include <glm/gtc/type_ptr.hpp>
+
+extern bool g_EnableShaderVersionTest;
 
 
 class CShaderGL
@@ -35,6 +37,12 @@ public:
 	static CShaderGL* Instance();
 private:
 	GLuint shader_id;
+	GLint u_projection;
+	GLint u_view;
+	GLint u_model;
+	GLint u_texture1;
+
+	void CacheUniformLocations();
 };
 
 #define gShaderGL				(CShaderGL::Instance())

@@ -329,8 +329,8 @@ bool CheckAbuseNameFilter(char* Text)
 bool CheckName()
 {
 	if (CheckAbuseNameFilter(InputText[0]) || CheckAbuseFilter(InputText[0]) ||
-		FindText(InputText[0], " ") || FindText(InputText[0], "¡¡") ||
-		FindText(InputText[0], ".") || FindText(InputText[0], "¡¤") || FindText(InputText[0], "¡­") ||
+		FindText(InputText[0], " ") || FindText(InputText[0], "ï¿½ï¿½") ||
+		FindText(InputText[0], ".") || FindText(InputText[0], "ï¿½ï¿½") || FindText(InputText[0], "ï¿½ï¿½") ||
 		FindText(InputText[0], "Webzen") || FindText(InputText[0], "WebZen") || FindText(InputText[0], "webzen") || FindText(InputText[0], "WEBZEN") ||
 		FindText(InputText[0], GlobalText[457]) || FindText(InputText[0], GlobalText[458]))
 		return true;
@@ -1856,6 +1856,7 @@ bool NewRenderLogInScene(HDC hDC)
 
 	g_pMultiLanguage->_GetTextExtentPoint32(g_pRenderText->GetFontDC(), Text, lstrlen(Text), &Size);
 	g_pRenderText->RenderText(0, gwinhandle->GetScreenY() - Size.cy * gwinhandle->GetScreenX() / WindowWidth - 1, Text);
+
 
 	RenderInfomation();
 

@@ -3334,8 +3334,8 @@ void BMD::CreateVertexBuffer(int i, Mesh_t& mesh)
 				VectorCopy(VertexTransform[i][source_vertex_index], vertices[target_vertex_index]);
 
 				TexCoord_t* textcoord = &mesh.TexCoords[triangle->TexCoordIndex[k]];
-				textCoords[target_vertex_index][0] = 0.0;
-				textCoords[target_vertex_index][1] = 0.0;
+				textCoords[target_vertex_index][0] = textcoord->TexCoordU;
+				textCoords[target_vertex_index][1] = textcoord->TexCoordV;
 				colors[target_vertex_index][0] = 1.f;
 				colors[target_vertex_index][1] = 1.f;
 				colors[target_vertex_index][2] = 1.f;
@@ -3380,8 +3380,31 @@ void BMD::RenderVertexBuffer(int i, Mesh_t* m, int vertex_index, vec3_t* vertice
 #ifdef SHADER_VERSION_TEST
 	GLuint shader_id = gShaderGL->GetShaderId();
 
-	if (shader_id != 0)
+	if (shader_id != 0 && g_EnableShaderVersionTest)
 	{
+		if (m->VAO == 0)
+		{
+			CreateVertexBuffer(i, *m);
+		}
+
+		if (m->VAO == 0)
+		{
+			glEnableClientState(GL_VERTEX_ARRAY);
+			if (colors != NULL) glEnableClientState(GL_COLOR_ARRAY);
+			glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+
+			glVertexPointer(3, GL_FLOAT, 0, vertices);
+			if (colors != NULL) glColorPointer(4, GL_FLOAT, 0, colors);
+			glTexCoordPointer(2, GL_FLOAT, 0, textCoords);
+			glDrawArrays(GL_TRIANGLES, 0, m->NumTriangles * 3);
+
+			glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+			if (colors != NULL) glDisableClientState(GL_COLOR_ARRAY);
+			glDisableClientState(GL_VERTEX_ARRAY);
+
+			return;
+		}
+
 		gShaderGL->run_projection();
 
 		glBindBuffer(GL_ARRAY_BUFFER, m->VBO_Vertices);

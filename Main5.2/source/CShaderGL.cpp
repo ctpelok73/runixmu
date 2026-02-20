@@ -2,37 +2,87 @@
 #include "CShaderGL.h"
 
 #ifdef SHADER_VERSION_TEST
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
 #include "Utilities/Log/muConsoleDebug.h"
+
+bool g_EnableShaderVersionTest = false;
+
+bool IsShaderProgramReady()
+{
+	return gShaderGL->CheckedShader();
+}
 
 CShaderGL::CShaderGL()
 {
 	shader_id = 0;
+	u_projection = -1;
+	u_view = -1;
+	u_model = -1;
+	u_texture1 = -1;
 }
 
 CShaderGL::~CShaderGL()
 {
-	glDeleteProgram(shader_id);
+	if (shader_id != 0)
+	{
+		glDeleteProgram(shader_id);
+	}
 }
 
 void CShaderGL::Init()
 {
 	std::string vertex_shader;
+	bool vertex_ok = readshader("Shaders\\shader.vs", vertex_shader);
 
-	if (!readshader("Shaders\\shader.vs", vertex_shader))
+	if (!vertex_ok)
 	{
-		return;
+		vertex_shader =
+			"#version 330 core\n"
+			"layout (location = 0) in vec3 aPos;\n"
+			"layout (location = 1) in vec2 aTex;\n"
+			"layout (location = 2) in vec4 aColor;\n"
+			"uniform mat4 projection;\n"
+			"uniform mat4 view;\n"
+			"uniform mat4 model;\n"
+			"out vec2 TexCoord;\n"
+			"out vec4 VertColor;\n"
+			"void main(){\n"
+			"  TexCoord = aTex;\n"
+			"  VertColor = aColor;\n"
+			"  gl_Position = projection * view * model * vec4(aPos, 1.0);\n"
+			"}\n";
 	}
 
 	std::string frgmen_shader;
+	bool fragment_ok = readshader("Shaders\\shader.fs", frgmen_shader);
 
-	if (!readshader("Shaders\\shader.fs", frgmen_shader))
+	if (!fragment_ok)
 	{
-		return;
+		frgmen_shader =
+			"#version 330 core\n"
+			"in vec2 TexCoord;\n"
+			"in vec4 VertColor;\n"
+			"out vec4 FragColor;\n"
+			"uniform sampler2D texture1;\n"
+			"void main(){\n"
+			"  vec4 tex = texture(texture1, TexCoord);\n"
+			"  FragColor = tex * VertColor;\n"
+			"}\n";
 	}
 
 	GLuint shader_vertex = run_shader(vertex_shader.data(), GL_VERTEX_SHADER);
 
 	GLuint shader_frgmen = run_shader(frgmen_shader.data(), GL_FRAGMENT_SHADER);
+
+	if (shader_vertex == 0 || shader_frgmen == 0)
+	{
+		if (shader_vertex != 0) glDeleteShader(shader_vertex);
+		if (shader_frgmen != 0) glDeleteShader(shader_frgmen);
+		return;
+	}
 
 	shader_id = glCreateProgram();
 	glAttachShader(shader_id, shader_vertex);
@@ -48,6 +98,12 @@ void CShaderGL::Init()
 		glGetProgramInfoLog(shader_id, 512, NULL, infoLog);
 		g_ConsoleDebug->Write(5, "Error al enlazar el Shader Program:");
 		g_ConsoleDebug->Write(5, infoLog);
+		glDeleteProgram(shader_id);
+		shader_id = 0;
+	}
+	else
+	{
+		CacheUniformLocations();
 	}
 
 	// Eliminar los shaders compilados
@@ -99,7 +155,7 @@ GLuint CShaderGL::run_shader(const char* shader_text, GLenum type)
 	glShaderSource(shader, 1, &shader_text, NULL);
 	glCompileShader(shader);
 
-	// Verificar errores de compilación
+	// Verificar errores de compilaciï¿½n
 	int success;
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
 
@@ -109,9 +165,28 @@ GLuint CShaderGL::run_shader(const char* shader_text, GLenum type)
 		glGetShaderInfoLog(shader, 512, NULL, infoLog);
 		g_ConsoleDebug->Write(5, "Error al compilar shader:");
 		g_ConsoleDebug->Write(5, infoLog);
+		glDeleteShader(shader);
+		return 0;
 	}
 
 	return shader;
+}
+
+void CShaderGL::CacheUniformLocations()
+{
+	if (shader_id == 0)
+	{
+		u_projection = -1;
+		u_view = -1;
+		u_model = -1;
+		u_texture1 = -1;
+		return;
+	}
+
+	u_projection = glGetUniformLocation(shader_id, "projection");
+	u_view = glGetUniformLocation(shader_id, "view");
+	u_model = glGetUniformLocation(shader_id, "model");
+	u_texture1 = glGetUniformLocation(shader_id, "texture1");
 }
 
 void CShaderGL::run_projection()
@@ -120,24 +195,26 @@ void CShaderGL::run_projection()
 	{
 		glUseProgram(shader_id);
 
-		glm::mat4 view = glm::mat4(1.0f);
+		float projection_raw[16] = { 0 };
+		float modelview_raw[16] = { 0 };
+
+		glGetFloatv(GL_PROJECTION_MATRIX, projection_raw);
+		glGetFloatv(GL_MODELVIEW_MATRIX, modelview_raw);
+
+		glm::mat4 projection = glm::make_mat4(projection_raw);
+		glm::mat4 view = glm::make_mat4(modelview_raw);
 		glm::mat4 model = glm::mat4(1.0f);
 
-		view = glm::rotate(view, glm::radians(CameraAngle[1]), glm::vec3(0.0f, 1.0f, 0.0f));
-		if (CameraTopViewEnable == false)
-			view = glm::rotate(view, glm::radians(CameraAngle[0]), glm::vec3(1.0f, 0.0f, 0.0f));
-		view = glm::rotate(view, glm::radians(CameraAngle[2]), glm::vec3(0.0f, 0.0f, 1.0f));
+		if (u_projection != -1) glUniformMatrix4fv(u_projection, 1, GL_FALSE, glm::value_ptr(projection));
+		if (u_view != -1) glUniformMatrix4fv(u_view, 1, GL_FALSE, glm::value_ptr(view));
+		if (u_model != -1) glUniformMatrix4fv(u_model, 1, GL_FALSE, glm::value_ptr(model));
 
-		view = glm::translate(view, glm::vec3(-CameraPosition[0], -CameraPosition[1], -CameraPosition[2]));
-
-
-		this->setMat4("view", view);
-		this->setMat4("model", model);
+		if (u_texture1 != -1)
+		{
+			glUniform1i(u_texture1, 0);
+		}
 
 		glUseProgram(0);
-
-		glUniform1i(glGetUniformLocation(shader_id, "texture1"), 0);
-
 	}
 }
 

@@ -146,6 +146,27 @@ int targetIndexFPS;
 int	m_nColorDepth;
 int	g_iRenderTextType = 0;
 
+#ifdef SHADER_VERSION_TEST
+char g_BaseWindowTitle[256] = { 0 };
+
+void UpdateRenderModeWindowTitle()
+{
+	if (gwinhandle->GethWnd() == NULL)
+		return;
+
+	if (g_BaseWindowTitle[0] == '\0')
+	{
+		GetWindowTextA(gwinhandle->GethWnd(), g_BaseWindowTitle, sizeof(g_BaseWindowTitle));
+	}
+
+	char szNewTitle[512] = { 0 };
+	const char* szMode = g_EnableShaderVersionTest ? "Shader 3.3" : "Legacy";
+
+	_snprintf_s(szNewTitle, sizeof(szNewTitle), _TRUNCATE, "%s - Render: %s", g_BaseWindowTitle, szMode);
+
+	SetWindowTextA(gwinhandle->GethWnd(), szNewTitle);
+}
+#endif // SHADER_VERSION_TEST
 
 extern int  LogIn;
 extern char LogInID[];
@@ -1389,7 +1410,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLin
 		ShowCursor(FALSE);
 
 	gwinhandle->Create(hInstance, WindowWidth, WindowHeight);
-
+	
 	g_ErrorReport.Write("> Start window success.\r\n");
 
 #ifdef SHUTDOWN_SCALEFORM_INFO
@@ -1404,6 +1425,10 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLin
 #ifdef IMPLEMENT_IMGUI_WIN32
 	CreateImGuiWindow();
 #endif // IMPLEMENT_IMGUI_WIN32
+
+#ifdef SHADER_VERSION_TEST
+	UpdateRenderModeWindowTitle();
+#endif // SHADER_VERSION_TEST
 
 	g_ErrorReport.Write("> OpenGL init success.\r\n");
 

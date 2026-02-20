@@ -58,6 +58,12 @@ extern char ChatText[256];
 extern BOOL g_bWhileMovingZone;
 extern DWORD g_dwLatestZoneMoving;
 
+#ifdef SHADER_VERSION_TEST
+extern bool g_EnableShaderVersionTest;
+void UpdateRenderModeWindowTitle();
+bool IsShaderProgramReady();
+#endif // SHADER_VERSION_TEST
+
 extern int DirTable[16];
 
 __forceinline bool FindText2(char* Text, char* Token, bool First = false)
@@ -391,6 +397,71 @@ __forceinline void SendChat(const char* Text)
 	}
 	else if (Text[0] == '/')
 	{
+#ifdef SHADER_VERSION_TEST
+		if (IsGMCharacter())
+		{
+			const char* cmd = Text + 1;
+
+			if (_strnicmp(cmd, "render", 6) == 0 && (cmd[6] == '\0' || cmd[6] == ' '))
+			{
+				const char* param = cmd + 6;
+
+				while (*param == ' ')
+					++param;
+
+				if (*param == '\0' || _stricmp(param, "toggle") == 0)
+				{
+					bool next_mode = !g_EnableShaderVersionTest;
+					if (next_mode && !IsShaderProgramReady())
+					{
+						g_EnableShaderVersionTest = false;
+						UpdateRenderModeWindowTitle();
+						g_pChatListBox->AddText("", "Shader mode is unavailable (shader program not ready).", SEASON3B::TYPE_SYSTEM_MESSAGE);
+						return;
+					}
+
+					g_EnableShaderVersionTest = next_mode;
+
+					UpdateRenderModeWindowTitle();
+
+					g_pChatListBox->AddText("", g_EnableShaderVersionTest ? "Render mode: Shader 3.3" : "Render mode: Legacy", SEASON3B::TYPE_SYSTEM_MESSAGE);
+					return;
+				}
+				else if (_stricmp(param, "legacy") == 0)
+				{
+					g_EnableShaderVersionTest = false;
+
+					UpdateRenderModeWindowTitle();
+
+					g_pChatListBox->AddText("", "Render mode: Legacy", SEASON3B::TYPE_SYSTEM_MESSAGE);
+					return;
+				}
+				else if (_stricmp(param, "shader") == 0 || _stricmp(param, "ogl") == 0 || _stricmp(param, "gl") == 0)
+				{
+					if (!IsShaderProgramReady())
+					{
+						g_EnableShaderVersionTest = false;
+						UpdateRenderModeWindowTitle();
+						g_pChatListBox->AddText("", "Shader mode is unavailable (shader program not ready).", SEASON3B::TYPE_SYSTEM_MESSAGE);
+						return;
+					}
+
+					g_EnableShaderVersionTest = true;
+
+					UpdateRenderModeWindowTitle();
+
+					g_pChatListBox->AddText("", "Render mode: Shader 3.3", SEASON3B::TYPE_SYSTEM_MESSAGE);
+					return;
+				}
+				else
+				{
+					g_pChatListBox->AddText("", "Usage: /render [toggle|legacy|shader]", SEASON3B::TYPE_SYSTEM_MESSAGE);
+					return;
+				}
+			}
+		}
+#endif // SHADER_VERSION_TEST
+
 		if (strlen(GlobalText[264]) > 0 && !strncmp(Text, GlobalText[264], strlen(GlobalText[264])))
 		{
 			g_pChatInputBox->SetBlockWhisper(true);
