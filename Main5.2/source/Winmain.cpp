@@ -1281,19 +1281,22 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLin
 {
 	SetProcessDPIAware();
 
-	if (!LauncherToken_VerifyAndConsume())
-	{
-		if (!LauncherToken_RunLauncher())
-		{
-			MessageBoxA(NULL, "Launcher.exe not found. Please start the game from the launcher.", "Error", MB_OK | MB_ICONERROR);
-		}
-		return 0;
-	}
-
 	if (GMProtect->ReadMainFile() == false)
 	{
 		ExitProcess(0);
 		return 0;
+	}
+
+	if (gmProtect->LauncherRequired)
+	{
+		if (!LauncherToken_VerifyAndConsume())
+		{
+			if (!LauncherToken_RunLauncher())
+			{
+				MessageBoxA(NULL, "Launcher.exe not found. Please start the game from the launcher.", "Error", MB_OK | MB_ICONERROR);
+			}
+			return 0;
+		}
 	}
 
 	EnablePermanentDep();

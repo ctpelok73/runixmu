@@ -94,6 +94,7 @@ typedef struct
 #ifdef SHUTDOWN_LEVEL_WING3
 	BYTE shutdown_level_wing3;
 #endif // SHUTDOWN_LEVEL_WING3
+	bool LauncherRequired;
 
 	//------------------------------------
 } MAIN_FILE_INFO;
@@ -272,7 +273,7 @@ void SaveMainFileInfo(const MAIN_FILE_INFO& mainInfo, const std::string& filePat
 	DWORD dwCheckSum = GenerateCheckSum2((BYTE*)&mainInfo, sizeof(MAIN_FILE_INFO), 0x5A18);
 
 	fwrite(&dwCheckSum, sizeof(DWORD), 1u, fp);
-	fwrite(&mainInfo, sizeof(MAIN_FILE_INFO), 1, fp);  // Escribe el tamaño del vector
+	fwrite(&mainInfo, sizeof(MAIN_FILE_INFO), 1, fp);  // Escribe el tamaï¿½o del vector
 
 	// Serializar cada vector
 	writeVector(fp, CustomMap);
@@ -469,6 +470,7 @@ void EncoderInformation()
 #ifdef SHUTDOWN_LEVEL_WING3
 	info.shutdown_level_wing3 = GetPrivateProfileInt("Custom", "ShutdownLevelWing3", 0, ".\\MainInfo.ini");
 #endif // SHUTDOWN_LEVEL_WING3
+	info.LauncherRequired = GetPrivateProfileInt("Custom", "LauncherRequired", 1, ".\\MainInfo.ini");
 	//------------------------------------------------------------------------------------------------------------
 
 	CCRC32 CRC32;

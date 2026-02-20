@@ -102,7 +102,7 @@ typedef struct
 #ifdef SHUTDOWN_LEVEL_WING3
 	BYTE shutdown_level_wing3;
 #endif // SHUTDOWN_LEVEL_WING3
-
+	bool LauncherRequired;
 
 
 	bool checkold_school() {
