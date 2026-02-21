@@ -9,6 +9,8 @@
 #include "Utilities/Log/muConsoleDebug.h"
 
 bool g_EnableShaderVersionTest = false;
+extern bool TextureEnable;
+extern bool AlphaTestEnable;
 
 bool IsShaderProgramReady()
 {
@@ -22,6 +24,14 @@ CShaderGL::CShaderGL()
 	u_view = -1;
 	u_model = -1;
 	u_texture1 = -1;
+	u_useTexture = -1;
+	u_alphaTextureMode = -1;
+	u_alphaTestEnabled = -1;
+	u_alphaTestRef = -1;
+	u_fogEnabled = -1;
+	u_fogColor = -1;
+	u_fogStart = -1;
+	u_fogEnd = -1;
 }
 
 CShaderGL::~CShaderGL()
@@ -49,10 +59,13 @@ void CShaderGL::Init()
 			"uniform mat4 model;\n"
 			"out vec2 TexCoord;\n"
 			"out vec4 VertColor;\n"
+			"out float FogCoord;\n"
 			"void main(){\n"
 			"  TexCoord = aTex;\n"
 			"  VertColor = aColor;\n"
-			"  gl_Position = projection * view * model * vec4(aPos, 1.0);\n"
+			"  vec4 eyePos = view * model * vec4(aPos, 1.0);\n"
+			"  FogCoord = abs(eyePos.z);\n"
+			"  gl_Position = projection * eyePos;\n"
 			"}\n";
 	}
 
@@ -65,11 +78,27 @@ void CShaderGL::Init()
 			"#version 330 core\n"
 			"in vec2 TexCoord;\n"
 			"in vec4 VertColor;\n"
+			"in float FogCoord;\n"
 			"out vec4 FragColor;\n"
 			"uniform sampler2D texture1;\n"
+			"uniform int useTexture;\n"
+			"uniform int alphaTextureMode;\n"
+			"uniform int alphaTestEnabled;\n"
+			"uniform float alphaTestRef;\n"
+			"uniform int fogEnabled;\n"
+			"uniform vec4 fogColor;\n"
+			"uniform float fogStart;\n"
+			"uniform float fogEnd;\n"
 			"void main(){\n"
-			"  vec4 tex = texture(texture1, TexCoord);\n"
+			"  vec4 tex = (useTexture != 0) ? texture(texture1, TexCoord) : vec4(1.0);\n"
+			"  if (alphaTextureMode != 0) tex = vec4(1.0, 1.0, 1.0, tex.a);\n"
 			"  FragColor = tex * VertColor;\n"
+			"  if (alphaTestEnabled != 0 && FragColor.a <= alphaTestRef) discard;\n"
+			"  if (fogEnabled != 0) {\n"
+			"    float denom = max(fogEnd - fogStart, 0.0001);\n"
+			"    float fogFactor = clamp((fogEnd - FogCoord) / denom, 0.0, 1.0);\n"
+			"    FragColor = mix(fogColor, FragColor, fogFactor);\n"
+			"  }\n"
 			"}\n";
 	}
 
@@ -180,6 +209,14 @@ void CShaderGL::CacheUniformLocations()
 		u_view = -1;
 		u_model = -1;
 		u_texture1 = -1;
+		u_useTexture = -1;
+		u_alphaTextureMode = -1;
+		u_alphaTestEnabled = -1;
+		u_alphaTestRef = -1;
+		u_fogEnabled = -1;
+		u_fogColor = -1;
+		u_fogStart = -1;
+		u_fogEnd = -1;
 		return;
 	}
 
@@ -187,6 +224,14 @@ void CShaderGL::CacheUniformLocations()
 	u_view = glGetUniformLocation(shader_id, "view");
 	u_model = glGetUniformLocation(shader_id, "model");
 	u_texture1 = glGetUniformLocation(shader_id, "texture1");
+	u_useTexture = glGetUniformLocation(shader_id, "useTexture");
+	u_alphaTextureMode = glGetUniformLocation(shader_id, "alphaTextureMode");
+	u_alphaTestEnabled = glGetUniformLocation(shader_id, "alphaTestEnabled");
+	u_alphaTestRef = glGetUniformLocation(shader_id, "alphaTestRef");
+	u_fogEnabled = glGetUniformLocation(shader_id, "fogEnabled");
+	u_fogColor = glGetUniformLocation(shader_id, "fogColor");
+	u_fogStart = glGetUniformLocation(shader_id, "fogStart");
+	u_fogEnd = glGetUniformLocation(shader_id, "fogEnd");
 }
 
 void CShaderGL::run_projection()
@@ -214,7 +259,55 @@ void CShaderGL::run_projection()
 			glUniform1i(u_texture1, 0);
 		}
 
+		if (u_useTexture != -1) glUniform1i(u_useTexture, TextureEnable ? 1 : 0);
+		if (u_alphaTextureMode != -1) glUniform1i(u_alphaTextureMode, 0);
+		if (u_alphaTestEnabled != -1) glUniform1i(u_alphaTestEnabled, AlphaTestEnable ? 1 : 0);
+
+		if (u_alphaTestRef != -1)
+		{
+			float alpha_ref = 0.25f;
+#ifdef GL_ALPHA_TEST_REF
+			glGetFloatv(GL_ALPHA_TEST_REF, &alpha_ref);
+#endif
+			glUniform1f(u_alphaTestRef, alpha_ref);
+		}
+
+		if (u_fogEnabled != -1)
+		{
+			GLint fog_enabled = glIsEnabled(GL_FOG) ? 1 : 0;
+			glUniform1i(u_fogEnabled, fog_enabled);
+		}
+
+		if (u_fogColor != -1)
+		{
+			float fog_color[4] = { 0.f, 0.f, 0.f, 0.f };
+			glGetFloatv(GL_FOG_COLOR, fog_color);
+			glUniform4f(u_fogColor, fog_color[0], fog_color[1], fog_color[2], fog_color[3]);
+		}
+
+		if (u_fogStart != -1)
+		{
+			float fog_start = 0.f;
+			glGetFloatv(GL_FOG_START, &fog_start);
+			glUniform1f(u_fogStart, fog_start);
+		}
+
+		if (u_fogEnd != -1)
+		{
+			float fog_end = 0.f;
+			glGetFloatv(GL_FOG_END, &fog_end);
+			glUniform1f(u_fogEnd, fog_end);
+		}
+
 		glUseProgram(0);
+	}
+}
+
+void CShaderGL::SetAlphaTextureMode(int mode)
+{
+	if (shader_id != 0 && u_alphaTextureMode != -1)
+	{
+		glUniform1i(u_alphaTextureMode, mode);
 	}
 }
 

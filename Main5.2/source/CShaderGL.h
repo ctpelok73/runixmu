@@ -24,6 +24,7 @@ public:
 
 	void run_projection();
 	void SetPerspective(float Fov, float Aspect, float ZNear, float ZFar);
+	void SetAlphaTextureMode(int mode);
 
 	// Funciones para establecer uniforms
 	void setBool(const char* name, bool value) const;
@@ -41,6 +42,14 @@ private:
 	GLint u_view;
 	GLint u_model;
 	GLint u_texture1;
+	GLint u_useTexture;
+	GLint u_alphaTextureMode;
+	GLint u_alphaTestEnabled;
+	GLint u_alphaTestRef;
+	GLint u_fogEnabled;
+	GLint u_fogColor;
+	GLint u_fogStart;
+	GLint u_fogEnd;
 
 	void CacheUniformLocations();
 };

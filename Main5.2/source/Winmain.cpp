@@ -771,6 +771,41 @@ bool CreateOpenglWindow()
 
 	glewInit();
 
+#ifdef SHADER_VERSION_TEST
+	typedef HGLRC(WINAPI* PFNWGLCREATECONTEXTATTRIBSARBPROC)(HDC hDC, HGLRC hShareContext, const int* attribList);
+
+	enum
+	{
+		WGL_CONTEXT_MAJOR_VERSION_ARB = 0x2091,
+		WGL_CONTEXT_MINOR_VERSION_ARB = 0x2092,
+		WGL_CONTEXT_PROFILE_MASK_ARB = 0x9126,
+		WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB = 0x00000002,
+	};
+
+	PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB =
+		(PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
+
+	if (wglCreateContextAttribsARB)
+	{
+		const int attribs[] = {
+			WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
+			WGL_CONTEXT_MINOR_VERSION_ARB, 3,
+			WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
+			0
+		};
+
+		HGLRC gl33 = wglCreateContextAttribsARB(g_hDC, 0, attribs);
+		if (gl33)
+		{
+			wglMakeCurrent(NULL, NULL);
+			wglDeleteContext(g_hRC);
+			g_hRC = gl33;
+			wglMakeCurrent(g_hDC, g_hRC);
+			glewInit();
+		}
+	}
+#endif // SHADER_VERSION_TEST
+
 	glEnable(GL_MULTISAMPLE);
 
 	ShowWindow(gwinhandle->GethWnd(), SW_SHOW);
@@ -1426,10 +1461,6 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLin
 	CreateImGuiWindow();
 #endif // IMPLEMENT_IMGUI_WIN32
 
-#ifdef SHADER_VERSION_TEST
-	UpdateRenderModeWindowTitle();
-#endif // SHADER_VERSION_TEST
-
 	g_ErrorReport.Write("> OpenGL init success.\r\n");
 
 	g_ErrorReport.AddSeparator();
@@ -1459,6 +1490,8 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLin
 
 #ifdef SHADER_VERSION_TEST
 	gShaderGL->Init();
+	g_EnableShaderVersionTest = gShaderGL->CheckedShader();
+	UpdateRenderModeWindowTitle();
 #endif // SHADER_VERSION_TEST
 
 	setlocale(LC_ALL, "en_US");

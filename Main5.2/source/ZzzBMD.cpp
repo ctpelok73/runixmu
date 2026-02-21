@@ -1523,6 +1523,12 @@ void BMD::RenderMesh(int i, int RenderFlag, float Alpha, int BlendMesh, float Bl
 						|| renderFlags == RENDER_CHROME8
 						|| renderFlags == RENDER_OIL;
 
+					float currentColor[4] = { 1.f, 1.f, 1.f, 1.f };
+					if (!enableColor)
+					{
+						glGetFloatv(GL_CURRENT_COLOR, currentColor);
+					}
+
 					for (int j = 0; j < m->NumTriangles; j++)
 					{
 						Triangle_t* triangle = &m->Triangles[j];
@@ -1535,10 +1541,20 @@ void BMD::RenderMesh(int i, int RenderFlag, float Alpha, int BlendMesh, float Bl
 
 							VectorCopy(VertexTransform[i][source_vertex_index], vertices[target_vertex_index]);
 
-							colors[target_vertex_index][3] = Alpha;
-							colors[target_vertex_index][0] = BodyLight[0];
-							colors[target_vertex_index][1] = BodyLight[1];
-							colors[target_vertex_index][2] = BodyLight[2];
+							if (enableColor)
+							{
+								colors[target_vertex_index][3] = Alpha;
+								colors[target_vertex_index][0] = BodyLight[0];
+								colors[target_vertex_index][1] = BodyLight[1];
+								colors[target_vertex_index][2] = BodyLight[2];
+							}
+							else
+							{
+								colors[target_vertex_index][0] = currentColor[0];
+								colors[target_vertex_index][1] = currentColor[1];
+								colors[target_vertex_index][2] = currentColor[2];
+								colors[target_vertex_index][3] = currentColor[3];
+							}
 
 							int normalIndex = triangle->NormalIndex[k];
 

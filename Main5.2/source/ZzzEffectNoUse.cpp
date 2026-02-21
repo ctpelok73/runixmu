@@ -13,6 +13,7 @@
 #include "ZzzEffect.h"
 #include "DSPlaySound.h"
 #include "WSClient.h"
+#include "CShaderGL.h"
 
 
 void MoveParticle(OBJECT* o, int Turn);
@@ -57,14 +58,102 @@ void RenderPlane(int Texture, vec3_t Position, float Scale, float Angle)
 	Vector(-Scale, Scale, 0.f, BoundingVertices[2]);
 	Vector(Scale, Scale, 0.f, BoundingVertices[3]);
 
-	glBegin(GL_QUADS);
+#ifdef SHADER_VERSION_TEST
+	GLuint shader_id = gShaderGL->GetShaderId();
+	if (shader_id != 0 && g_EnableShaderVersionTest)
+	{
+		static GLuint s_vao = 0;
+		static GLuint s_vboPos = 0;
+		static GLuint s_vboUV = 0;
+		static GLuint s_vboColor = 0;
 
-	glTexCoord2f(0.f, 1.f); glVertex3fv(BoundingVertices[0]);
-	glTexCoord2f(1.f, 1.f); glVertex3fv(BoundingVertices[2]);
-	glTexCoord2f(1.f, 0.f); glVertex3fv(BoundingVertices[3]);
-	glTexCoord2f(0.f, 0.f); glVertex3fv(BoundingVertices[1]);
+		if (s_vao == 0)
+		{
+			glGenVertexArrays(1, &s_vao);
+			glBindVertexArray(s_vao);
 
-	glEnd();
+			glGenBuffers(1, &s_vboPos);
+			glBindBuffer(GL_ARRAY_BUFFER, s_vboPos);
+			glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 3 * 6, nullptr, GL_DYNAMIC_DRAW);
+			glEnableVertexAttribArray(0);
+			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+			glGenBuffers(1, &s_vboUV);
+			glBindBuffer(GL_ARRAY_BUFFER, s_vboUV);
+			glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 2 * 6, nullptr, GL_DYNAMIC_DRAW);
+			glEnableVertexAttribArray(1);
+			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+			glGenBuffers(1, &s_vboColor);
+			glBindBuffer(GL_ARRAY_BUFFER, s_vboColor);
+			glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * 6, nullptr, GL_DYNAMIC_DRAW);
+			glEnableVertexAttribArray(2);
+			glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			glBindVertexArray(0);
+		}
+
+		float currentColor[4] = { 1.f, 1.f, 1.f, 1.f };
+		glGetFloatv(GL_CURRENT_COLOR, currentColor);
+
+		const float positions[6][3] = {
+			{ BoundingVertices[0][0], BoundingVertices[0][1], BoundingVertices[0][2] },
+			{ BoundingVertices[2][0], BoundingVertices[2][1], BoundingVertices[2][2] },
+			{ BoundingVertices[3][0], BoundingVertices[3][1], BoundingVertices[3][2] },
+			{ BoundingVertices[0][0], BoundingVertices[0][1], BoundingVertices[0][2] },
+			{ BoundingVertices[3][0], BoundingVertices[3][1], BoundingVertices[3][2] },
+			{ BoundingVertices[1][0], BoundingVertices[1][1], BoundingVertices[1][2] },
+		};
+
+		const float uvs[6][2] = {
+			{ 0.f, 1.f },
+			{ 1.f, 1.f },
+			{ 1.f, 0.f },
+			{ 0.f, 1.f },
+			{ 1.f, 0.f },
+			{ 0.f, 0.f },
+		};
+
+		float colors[6][4];
+		for (int i = 0; i < 6; ++i)
+		{
+			colors[i][0] = currentColor[0];
+			colors[i][1] = currentColor[1];
+			colors[i][2] = currentColor[2];
+			colors[i][3] = currentColor[3];
+		}
+
+		gShaderGL->run_projection();
+
+		glUseProgram(shader_id);
+		glBindVertexArray(s_vao);
+
+		glBindBuffer(GL_ARRAY_BUFFER, s_vboPos);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(positions), positions);
+		glBindBuffer(GL_ARRAY_BUFFER, s_vboUV);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(uvs), uvs);
+		glBindBuffer(GL_ARRAY_BUFFER, s_vboColor);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(colors), colors);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+		glDrawArrays(GL_TRIANGLES, 0, 6);
+
+		glBindVertexArray(0);
+		glUseProgram(0);
+	}
+	else
+#endif // SHADER_VERSION_TEST
+	{
+		glBegin(GL_QUADS);
+
+		glTexCoord2f(0.f, 1.f); glVertex3fv(BoundingVertices[0]);
+		glTexCoord2f(1.f, 1.f); glVertex3fv(BoundingVertices[2]);
+		glTexCoord2f(1.f, 0.f); glVertex3fv(BoundingVertices[3]);
+		glTexCoord2f(0.f, 0.f); glVertex3fv(BoundingVertices[1]);
+
+		glEnd();
+	}
 
 	glPopMatrix();
 	DisableAlphaBlend();
