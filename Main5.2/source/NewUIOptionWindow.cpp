@@ -15,6 +15,12 @@
 #include "TextClien.h"
 using namespace SEASON3B;
 
+#ifdef SHADER_VERSION_TEST
+extern bool g_EnableShaderVersionTest;
+bool IsShaderProgramReady();
+void UpdateRenderModeWindowTitle();
+#endif // SHADER_VERSION_TEST
+
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
@@ -35,6 +41,7 @@ SEASON3B::CNewUIOptionWindow::CNewUIOptionWindow()
 	m_RenderEquipment = true;
 	m_RenderTerrain = true;
 	m_RenderObjects = true;
+	m_RenderShader33 = false;
 }
 
 SEASON3B::CNewUIOptionWindow::~CNewUIOptionWindow()
@@ -140,6 +147,33 @@ bool SEASON3B::CNewUIOptionWindow::UpdateMouseEvent()
 	{
 		m_RenderObjects = !m_RenderObjects;
 	}
+
+#ifdef SHADER_VERSION_TEST
+	if (SEASON3B::IsPress(VK_LBUTTON) && CheckMouseIn(RenderFrameX + 210.0, RenderFrameY + 166.0, 15, 15))
+	{
+		bool next_mode = !m_RenderShader33;
+		if (next_mode && !IsShaderProgramReady())
+		{
+			m_RenderShader33 = false;
+			g_EnableShaderVersionTest = false;
+			UpdateRenderModeWindowTitle();
+			if (g_pChatListBox)
+			{
+				g_pChatListBox->AddText("", "Shader mode is unavailable (shader program not ready).", SEASON3B::TYPE_SYSTEM_MESSAGE);
+			}
+		}
+		else
+		{
+			m_RenderShader33 = next_mode;
+			g_EnableShaderVersionTest = next_mode;
+			UpdateRenderModeWindowTitle();
+			if (g_pChatListBox)
+			{
+				g_pChatListBox->AddText("", g_EnableShaderVersionTest ? "Render mode: Shader 3.3" : "Render mode: Legacy", SEASON3B::TYPE_SYSTEM_MESSAGE);
+			}
+		}
+	}
+#endif // SHADER_VERSION_TEST
 
 	if (CheckMouseIn(RenderFrameX + 108 - 8, RenderFrameY + 185, 124 + 8, 16))
 	{
@@ -253,7 +287,9 @@ float SEASON3B::CNewUIOptionWindow::GetKeyEventOrder()	// 10.f;
 
 void SEASON3B::CNewUIOptionWindow::OpenningProcess()
 {
-
+#ifdef SHADER_VERSION_TEST
+	m_RenderShader33 = g_EnableShaderVersionTest;
+#endif // SHADER_VERSION_TEST
 }
 
 void SEASON3B::CNewUIOptionWindow::ClosingProcess()
@@ -420,6 +456,10 @@ void SEASON3B::CNewUIOptionWindow::RenderContents()
 
 	g_pRenderText->RenderText(RenderFrameX + 100, RenderFrameY + 148, gTextClien.TextClien_Khac[9], 0, 15); //-- Slide Help
 
+#ifdef SHADER_VERSION_TEST
+	g_pRenderText->RenderText(RenderFrameX + 100, RenderFrameY + 166, "Render mode: Shader 3.3", 0, 15);
+#endif // SHADER_VERSION_TEST
+
 	g_pRenderText->RenderText(RenderFrameX + 100, RenderFrameY + 175, GlobalText[389]); //-- Volume
 
 	g_pRenderText->RenderText(RenderFrameX + 100, RenderFrameY + 210, GlobalText[1840]); //-- +Effect limitation
@@ -452,6 +492,10 @@ void SEASON3B::CNewUIOptionWindow::RenderButtons()
 	RenderChecked(RenderFrameX + 210.0, RenderFrameY + 130.0, m_RenderTerrain);
 
 	RenderChecked(RenderFrameX + 210.0, RenderFrameY + 148.0, m_RenderObjects);
+
+#ifdef SHADER_VERSION_TEST
+	RenderChecked(RenderFrameX + 210.0, RenderFrameY + 166.0, m_RenderShader33);
+#endif // SHADER_VERSION_TEST
 
 
 	RenderImage(IMAGE_OPTION_VOLUME_BACK, RenderFrameX + 108, RenderFrameY + 185, 124.f, 16.f);

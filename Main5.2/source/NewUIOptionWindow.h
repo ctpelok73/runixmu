@@ -116,6 +116,7 @@ namespace SEASON3B
 		bool m_RenderEquipment;
 		bool m_RenderTerrain;
 		bool m_RenderObjects;
+		bool m_RenderShader33;
 		CNewUIListGroupButton resolutionList;
 		CNewUIListGroupButton fonttextList;
 	};

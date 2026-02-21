@@ -12,7 +12,7 @@ extern unsigned int WindowWidth;
 extern unsigned int WindowHeight;
 extern vec3_t CollisionPosition;
 extern float  FPS;
-#if defined(LDS_FOR_DEVELOPMENT_TESTMODE) || defined(LDS_UNFIXED_FIXEDFRAME_FORDEBUG)		// ½ÇFPS.(°íÁ¤ 20FPS »óÈ²¿¡¼­ ÃßÁ¤¿ë.)
+#if defined(LDS_FOR_DEVELOPMENT_TESTMODE) || defined(LDS_UNFIXED_FIXEDFRAME_FORDEBUG)		// ï¿½ï¿½FPS.(ï¿½ï¿½ï¿½ï¿½ 20FPS ï¿½ï¿½È²ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.)
 extern float g_fFrameEstimate;
 #endif // defined(LDS_FOR_DEVELOPMENT_TESTMODE) || defined(LDS_UNFIXED_FIXEDFRAME_FORDEBUG)
 extern float  WorldTime;

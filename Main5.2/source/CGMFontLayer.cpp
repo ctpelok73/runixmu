@@ -5,6 +5,9 @@
 #include "./Utilities/Log/muConsoleDebug.h"
 
 extern void BindTexture(int tex);
+#ifdef SHADER_VERSION_TEST
+extern bool g_EnableShaderVersionTest;
+#endif // SHADER_VERSION_TEST
 
 CGMFontLayer::CGMFontLayer()
 {
@@ -55,6 +58,12 @@ void CGMFontLayer::runtime_load_bitmap(GLuint* textures, GLsizei _width, GLsizei
 		glDeleteTextures(1, textures);
 	}
 	glGenTextures(1, textures);
+#ifdef SHADER_VERSION_TEST
+	if (g_EnableShaderVersionTest)
+	{
+		glActiveTexture(GL_TEXTURE0);
+	}
+#endif // SHADER_VERSION_TEST
 	glBindTexture(GL_TEXTURE_2D, *textures);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, _width, _height, 0, GL_ALPHA, GL_UNSIGNED_BYTE, data);
 

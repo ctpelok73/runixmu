@@ -288,16 +288,29 @@ bool TestDepthBuffer(vec3_t Position)
 
 void BindTexture(int tex)
 {
+#ifdef SHADER_VERSION_TEST
+	if (g_EnableShaderVersionTest)
+	{
+		glActiveTexture(GL_TEXTURE0);
+		if (tex >= 0)
+		{
+			glBindTexture(GL_TEXTURE_2D, Bitmaps[tex].TextureNumber);
+		}
+		else
+		{
+			glBindTexture(GL_TEXTURE_2D, -1 * tex);
+		}
+		CachTexture = tex;
+		return;
+	}
+#endif // SHADER_VERSION_TEST
+
 	if (CachTexture != tex)
 	{
 		CachTexture = tex;
 		if (tex >= 0)
 		{
 			BITMAP_t* b = &Bitmaps[tex];
-#ifdef SHADER_VERSION_TEST
-			glActiveTexture(GL_TEXTURE0);  // Activamos la unidad de textura despu�s
-#endif // SHADER_VERSION_TEST
-
 			glBindTexture(GL_TEXTURE_2D, b->TextureNumber);
 		}
 		else
@@ -319,6 +332,12 @@ void BindTextureStream(int tex)
 		if (TextureStream)
 			glEnd();
 		BITMAP_t* b = &Bitmaps[tex];
+#ifdef SHADER_VERSION_TEST
+		if (g_EnableShaderVersionTest)
+		{
+			glActiveTexture(GL_TEXTURE0);
+		}
+#endif // SHADER_VERSION_TEST
 		glBindTexture(GL_TEXTURE_2D, b->TextureNumber);
 
 		glBegin(GL_TRIANGLES);
@@ -1271,9 +1290,123 @@ void RenderColor(float x, float y, float Width, float Height, float Alpha, int F
 		Height = ConvertY(Height);
 	}
 
-	float p[4][2];
 	y = WindowHeight - y;
 
+#ifdef SHADER_VERSION_TEST
+	GLuint shader_id = gShaderGL->GetShaderId();
+	if (shader_id != 0 && g_EnableShaderVersionTest)
+	{
+		static GLuint s_vao = 0;
+		static GLuint s_vboPos = 0;
+		static GLuint s_vboUV = 0;
+		static GLuint s_vboColor = 0;
+
+		if (s_vao == 0)
+		{
+			glGenVertexArrays(1, &s_vao);
+			glBindVertexArray(s_vao);
+
+			glGenBuffers(1, &s_vboPos);
+			glBindBuffer(GL_ARRAY_BUFFER, s_vboPos);
+			glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 3 * 6, nullptr, GL_DYNAMIC_DRAW);
+			glEnableVertexAttribArray(0);
+			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+			glGenBuffers(1, &s_vboUV);
+			glBindBuffer(GL_ARRAY_BUFFER, s_vboUV);
+			glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 2 * 6, nullptr, GL_DYNAMIC_DRAW);
+			glEnableVertexAttribArray(1);
+			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+			glGenBuffers(1, &s_vboColor);
+			glBindBuffer(GL_ARRAY_BUFFER, s_vboColor);
+			glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * 6, nullptr, GL_DYNAMIC_DRAW);
+			glEnableVertexAttribArray(2);
+			glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			glBindVertexArray(0);
+		}
+
+		float drawColor[4] = { 1.f, 1.f, 1.f, 1.f };
+		glGetFloatv(GL_CURRENT_COLOR, drawColor);
+		if (Alpha > 0.f)
+		{
+			if (Flag == 0)
+			{
+				drawColor[0] = 1.f;
+				drawColor[1] = 1.f;
+				drawColor[2] = 1.f;
+				drawColor[3] = Alpha;
+			}
+			else if (Flag == 1)
+			{
+				drawColor[0] = 0.f;
+				drawColor[1] = 0.f;
+				drawColor[2] = 0.f;
+				drawColor[3] = Alpha;
+			}
+		}
+
+		const float p0x = x;
+		const float p0y = y;
+		const float p1x = x;
+		const float p1y = y - Height;
+		const float p2x = x + Width;
+		const float p2y = y - Height;
+		const float p3x = x + Width;
+		const float p3y = y;
+
+		const float positions[6][3] = {
+			{ p0x, p0y, 0.f },
+			{ p1x, p1y, 0.f },
+			{ p2x, p2y, 0.f },
+			{ p0x, p0y, 0.f },
+			{ p2x, p2y, 0.f },
+			{ p3x, p3y, 0.f },
+		};
+
+		const float uvs[6][2] = {
+			{ 0.f, 0.f },
+			{ 0.f, 1.f },
+			{ 1.f, 1.f },
+			{ 0.f, 0.f },
+			{ 1.f, 1.f },
+			{ 1.f, 0.f },
+		};
+
+		float colors[6][4];
+		for (int i = 0; i < 6; ++i)
+		{
+			colors[i][0] = drawColor[0];
+			colors[i][1] = drawColor[1];
+			colors[i][2] = drawColor[2];
+			colors[i][3] = drawColor[3];
+		}
+
+		gShaderGL->run_projection();
+
+		glUseProgram(shader_id);
+		glBindVertexArray(s_vao);
+
+		glBindBuffer(GL_ARRAY_BUFFER, s_vboPos);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(positions), positions);
+		glBindBuffer(GL_ARRAY_BUFFER, s_vboUV);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(uvs), uvs);
+		glBindBuffer(GL_ARRAY_BUFFER, s_vboColor);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(colors), colors);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glDrawArrays(GL_TRIANGLES, 0, 6);
+
+		glBindVertexArray(0);
+		glUseProgram(0);
+		return;
+	}
+#endif // SHADER_VERSION_TEST
+
+	float p[4][2];
 	p[0][0] = x; p[0][1] = y;
 	p[1][0] = x; p[1][1] = y - Height;
 	p[2][0] = x + Width; p[2][1] = y - Height;
@@ -1307,9 +1440,123 @@ void RenderNoColor(float x, float y, float Width, float Height, float Alpha, int
 	Width = ConvertNoX(Width);
 	Height = ConvertNoY(Height);
 
-	float p[4][2];
 	y = WindowHeight - y;
 
+#ifdef SHADER_VERSION_TEST
+	GLuint shader_id = gShaderGL->GetShaderId();
+	if (shader_id != 0 && g_EnableShaderVersionTest)
+	{
+		static GLuint s_vao = 0;
+		static GLuint s_vboPos = 0;
+		static GLuint s_vboUV = 0;
+		static GLuint s_vboColor = 0;
+
+		if (s_vao == 0)
+		{
+			glGenVertexArrays(1, &s_vao);
+			glBindVertexArray(s_vao);
+
+			glGenBuffers(1, &s_vboPos);
+			glBindBuffer(GL_ARRAY_BUFFER, s_vboPos);
+			glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 3 * 6, nullptr, GL_DYNAMIC_DRAW);
+			glEnableVertexAttribArray(0);
+			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+			glGenBuffers(1, &s_vboUV);
+			glBindBuffer(GL_ARRAY_BUFFER, s_vboUV);
+			glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 2 * 6, nullptr, GL_DYNAMIC_DRAW);
+			glEnableVertexAttribArray(1);
+			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+			glGenBuffers(1, &s_vboColor);
+			glBindBuffer(GL_ARRAY_BUFFER, s_vboColor);
+			glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * 6, nullptr, GL_DYNAMIC_DRAW);
+			glEnableVertexAttribArray(2);
+			glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			glBindVertexArray(0);
+		}
+
+		float drawColor[4] = { 1.f, 1.f, 1.f, 1.f };
+		glGetFloatv(GL_CURRENT_COLOR, drawColor);
+		if (Alpha > 0.f)
+		{
+			if (Flag == 0)
+			{
+				drawColor[0] = 1.f;
+				drawColor[1] = 1.f;
+				drawColor[2] = 1.f;
+				drawColor[3] = Alpha;
+			}
+			else if (Flag == 1)
+			{
+				drawColor[0] = 0.f;
+				drawColor[1] = 0.f;
+				drawColor[2] = 0.f;
+				drawColor[3] = Alpha;
+			}
+		}
+
+		const float p0x = x;
+		const float p0y = y;
+		const float p1x = x;
+		const float p1y = y - Height;
+		const float p2x = x + Width;
+		const float p2y = y - Height;
+		const float p3x = x + Width;
+		const float p3y = y;
+
+		const float positions[6][3] = {
+			{ p0x, p0y, 0.f },
+			{ p1x, p1y, 0.f },
+			{ p2x, p2y, 0.f },
+			{ p0x, p0y, 0.f },
+			{ p2x, p2y, 0.f },
+			{ p3x, p3y, 0.f },
+		};
+
+		const float uvs[6][2] = {
+			{ 0.f, 0.f },
+			{ 0.f, 1.f },
+			{ 1.f, 1.f },
+			{ 0.f, 0.f },
+			{ 1.f, 1.f },
+			{ 1.f, 0.f },
+		};
+
+		float colors[6][4];
+		for (int i = 0; i < 6; ++i)
+		{
+			colors[i][0] = drawColor[0];
+			colors[i][1] = drawColor[1];
+			colors[i][2] = drawColor[2];
+			colors[i][3] = drawColor[3];
+		}
+
+		gShaderGL->run_projection();
+
+		glUseProgram(shader_id);
+		glBindVertexArray(s_vao);
+
+		glBindBuffer(GL_ARRAY_BUFFER, s_vboPos);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(positions), positions);
+		glBindBuffer(GL_ARRAY_BUFFER, s_vboUV);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(uvs), uvs);
+		glBindBuffer(GL_ARRAY_BUFFER, s_vboColor);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(colors), colors);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glDrawArrays(GL_TRIANGLES, 0, 6);
+
+		glBindVertexArray(0);
+		glUseProgram(0);
+		return;
+	}
+#endif // SHADER_VERSION_TEST
+
+	float p[4][2];
 	p[0][0] = x; p[0][1] = y;
 	p[1][0] = x; p[1][1] = y - Height;
 	p[2][0] = x + Width; p[2][1] = y - Height;
@@ -1342,6 +1589,26 @@ void EndRenderColor()
 
 void RenderColorBitmap(int Texture, float x, float y, float Width, float Height, float u, float v, float uWidth, float vHeight, unsigned int color)
 {
+#ifdef SHADER_VERSION_TEST
+	GLuint shader_id = gShaderGL->GetShaderId();
+	if (shader_id != 0 && g_EnableShaderVersionTest)
+	{
+		float oldColor[4] = { 1.f, 1.f, 1.f, 1.f };
+		glGetFloatv(GL_CURRENT_COLOR, oldColor);
+
+		glColor4ub(
+			static_cast<GLubyte>((color & 0xff)),
+			static_cast<GLubyte>((color >> 8) & 0xff),
+			static_cast<GLubyte>((color >> 16) & 0xff),
+			static_cast<GLubyte>((color >> 24) & 0xff));
+
+		RenderBitmap(Texture, x, y, Width, Height, u, v, uWidth, vHeight, true, true, 0.0f);
+
+		glColor4f(oldColor[0], oldColor[1], oldColor[2], oldColor[3]);
+		return;
+	}
+#endif // SHADER_VERSION_TEST
+
 	x = ConvertX(x);
 	y = ConvertY(y);
 
@@ -1528,7 +1795,193 @@ void RenderBitmap(int Texture, float x, float y, float Width, float Height, floa
 			}
 
 			int alphaTextureMode = 0;
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, glTex);
+
 			if (glTex != 0)
+			{
+				if (Texture >= 0 && Bitmaps[Texture].Components == 1)
+				{
+					alphaTextureMode = 1;
+				}
+				else
+				{
+					static GLuint s_texIds[256] = { 0 };
+					static GLint s_texFormats[256] = { 0 };
+					static int s_texCount = 0;
+
+					GLint internalFormat = 0;
+					bool found = false;
+					for (int i = 0; i < s_texCount; ++i)
+					{
+						if (s_texIds[i] == glTex)
+						{
+							internalFormat = s_texFormats[i];
+							found = true;
+							break;
+						}
+					}
+
+					if (!found)
+					{
+						glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &internalFormat);
+						if (s_texCount < 256)
+						{
+							s_texIds[s_texCount] = glTex;
+							s_texFormats[s_texCount] = internalFormat;
+							++s_texCount;
+						}
+					}
+
+					switch (internalFormat)
+					{
+					case GL_ALPHA:
+					case GL_ALPHA4:
+					case GL_ALPHA8:
+					case GL_ALPHA12:
+					case GL_ALPHA16:
+						alphaTextureMode = 1;
+						break;
+					default:
+						break;
+					}
+				}
+			}
+
+			gShaderGL->SetAlphaTextureMode(alphaTextureMode);
+		}
+		glBindVertexArray(s_vao);
+
+		glBindBuffer(GL_ARRAY_BUFFER, s_vboPos);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(positions), positions);
+		glBindBuffer(GL_ARRAY_BUFFER, s_vboUV);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(uvs), uvs);
+		glBindBuffer(GL_ARRAY_BUFFER, s_vboColor);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(colors), colors);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+		glDrawArrays(GL_TRIANGLES, 0, 6);
+
+		glBindVertexArray(0);
+		glUseProgram(0);
+
+		if (Alpha > 0.f)
+		{
+			glColor4f(1.f, 1.f, 1.f, 1.f);
+		}
+	}
+	else
+#endif // SHADER_VERSION_TEST
+	{
+#ifdef SHADER_VERSION_TEST
+		glUseProgram(0);
+		glBindVertexArray(0);
+		glActiveTexture(GL_TEXTURE0);
+		glClientActiveTexture(GL_TEXTURE0);
+#endif // SHADER_VERSION_TEST
+
+		float p[4][2];
+		float c[4][2];
+
+		p[0][0] = p0x; p[0][1] = p0y;
+		p[1][0] = p1x; p[1][1] = p1y;
+		p[2][0] = p2x; p[2][1] = p2y;
+		p[3][0] = p3x; p[3][1] = p3y;
+
+		TEXCOORD(c[0], c0u, c0v);
+		TEXCOORD(c[3], c3u, c3v);
+		TEXCOORD(c[2], c2u, c2v);
+		TEXCOORD(c[1], c1u, c1v);
+
+		glEnableClientState(GL_VERTEX_ARRAY);
+		glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+
+		glVertexPointer(2, GL_FLOAT, 0, p);
+		glTexCoordPointer(2, GL_FLOAT, 0, c);
+
+		if (Alpha > 0.f)
+		{
+			glColor4f(1.f, 1.f, 1.f, Alpha);
+		}
+
+		glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+		if (Alpha > 0.f)
+		{
+			glColor4f(1.f, 1.f, 1.f, 1.f);
+		}
+
+		glDisableClientState(GL_VERTEX_ARRAY);
+		glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+	}
+}
+
+#ifdef SHADER_VERSION_TEST
+static bool RenderBitmapShaderTriangles(int Texture, const float positions[6][3], const float uvs[6][2], const float colors[6][4])
+{
+	GLuint shader_id = gShaderGL->GetShaderId();
+	if (shader_id == 0 || !g_EnableShaderVersionTest)
+	{
+		return false;
+	}
+
+	static GLuint s_vao = 0;
+	static GLuint s_vboPos = 0;
+	static GLuint s_vboUV = 0;
+	static GLuint s_vboColor = 0;
+
+	if (s_vao == 0)
+	{
+		glGenVertexArrays(1, &s_vao);
+		glBindVertexArray(s_vao);
+
+		glGenBuffers(1, &s_vboPos);
+		glBindBuffer(GL_ARRAY_BUFFER, s_vboPos);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 3 * 6, nullptr, GL_DYNAMIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+		glGenBuffers(1, &s_vboUV);
+		glBindBuffer(GL_ARRAY_BUFFER, s_vboUV);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 2 * 6, nullptr, GL_DYNAMIC_DRAW);
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+		glGenBuffers(1, &s_vboColor);
+		glBindBuffer(GL_ARRAY_BUFFER, s_vboColor);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * 6, nullptr, GL_DYNAMIC_DRAW);
+		glEnableVertexAttribArray(2);
+		glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		glBindVertexArray(0);
+	}
+
+	gShaderGL->run_projection();
+
+	glUseProgram(shader_id);
+	{
+		GLuint glTex = 0;
+		if (Texture >= 0)
+		{
+			glTex = (GLuint)Bitmaps[Texture].TextureNumber;
+		}
+		else
+		{
+			glTex = (GLuint)(-Texture);
+		}
+
+		int alphaTextureMode = 0;
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, glTex);
+
+		if (glTex != 0)
+		{
+			if (Texture >= 0 && Bitmaps[Texture].Components == 1)
+			{
+				alphaTextureMode = 1;
+			}
+			else
 			{
 				static GLuint s_texIds[256] = { 0 };
 				static GLint s_texFormats[256] = { 0 };
@@ -1570,67 +2023,28 @@ void RenderBitmap(int Texture, float x, float y, float Width, float Height, floa
 					break;
 				}
 			}
-
-			gShaderGL->SetAlphaTextureMode(alphaTextureMode);
 		}
-		glBindVertexArray(s_vao);
 
-		glBindBuffer(GL_ARRAY_BUFFER, s_vboPos);
-		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(positions), positions);
-		glBindBuffer(GL_ARRAY_BUFFER, s_vboUV);
-		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(uvs), uvs);
-		glBindBuffer(GL_ARRAY_BUFFER, s_vboColor);
-		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(colors), colors);
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-		glDrawArrays(GL_TRIANGLES, 0, 6);
-
-		glBindVertexArray(0);
-		glUseProgram(0);
-
-		if (Alpha > 0.f)
-		{
-			glColor4f(1.f, 1.f, 1.f, 1.f);
-		}
+		gShaderGL->SetAlphaTextureMode(alphaTextureMode);
 	}
-	else
-#endif // SHADER_VERSION_TEST
-	{
-		float p[4][2];
-		float c[4][2];
 
-		p[0][0] = p0x; p[0][1] = p0y;
-		p[1][0] = p1x; p[1][1] = p1y;
-		p[2][0] = p2x; p[2][1] = p2y;
-		p[3][0] = p3x; p[3][1] = p3y;
+	glBindVertexArray(s_vao);
 
-		TEXCOORD(c[0], c0u, c0v);
-		TEXCOORD(c[3], c3u, c3v);
-		TEXCOORD(c[2], c2u, c2v);
-		TEXCOORD(c[1], c1u, c1v);
+	glBindBuffer(GL_ARRAY_BUFFER, s_vboPos);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * 3 * 6, positions);
+	glBindBuffer(GL_ARRAY_BUFFER, s_vboUV);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * 2 * 6, uvs);
+	glBindBuffer(GL_ARRAY_BUFFER, s_vboColor);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * 4 * 6, colors);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-		glEnableClientState(GL_VERTEX_ARRAY);
-		glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+	glDrawArrays(GL_TRIANGLES, 0, 6);
 
-		glVertexPointer(2, GL_FLOAT, 0, p);
-		glTexCoordPointer(2, GL_FLOAT, 0, c);
-
-		if (Alpha > 0.f)
-		{
-			glColor4f(1.f, 1.f, 1.f, Alpha);
-		}
-
-		glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-
-		if (Alpha > 0.f)
-		{
-			glColor4f(1.f, 1.f, 1.f, 1.f);
-		}
-
-		glDisableClientState(GL_VERTEX_ARRAY);
-		glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-	}
+	glBindVertexArray(0);
+	glUseProgram(0);
+	return true;
 }
+#endif // SHADER_VERSION_TEST
 
 void RenderNoBitmap(int Texture, float x, float y, float Width, float Height, float u, float v, float uWidth, float vHeight, bool Scale, bool StartScale, float Alpha)
 {
@@ -1661,6 +2075,57 @@ void RenderNoBitmap(int Texture, float x, float y, float Width, float Height, fl
 	TEXCOORD(c[3], u + uWidth, v);
 	TEXCOORD(c[2], u + uWidth, v + vHeight);
 	TEXCOORD(c[1], u, v + vHeight);
+
+#ifdef SHADER_VERSION_TEST
+	if (Texture >= 0 && g_EnableShaderVersionTest)
+	{
+		float currentColor[4] = { 1.f, 1.f, 1.f, 1.f };
+		glGetFloatv(GL_CURRENT_COLOR, currentColor);
+		if (Alpha > 0.f)
+		{
+			currentColor[0] = 1.f;
+			currentColor[1] = 1.f;
+			currentColor[2] = 1.f;
+			currentColor[3] = Alpha;
+		}
+
+		const float positions[6][3] = {
+			{ p[0][0], p[0][1], 0.f },
+			{ p[1][0], p[1][1], 0.f },
+			{ p[2][0], p[2][1], 0.f },
+			{ p[0][0], p[0][1], 0.f },
+			{ p[2][0], p[2][1], 0.f },
+			{ p[3][0], p[3][1], 0.f },
+		};
+
+		const float uvs[6][2] = {
+			{ c[0][0], c[0][1] },
+			{ c[1][0], c[1][1] },
+			{ c[2][0], c[2][1] },
+			{ c[0][0], c[0][1] },
+			{ c[2][0], c[2][1] },
+			{ c[3][0], c[3][1] },
+		};
+
+		float colors[6][4];
+		for (int i = 0; i < 6; ++i)
+		{
+			colors[i][0] = currentColor[0];
+			colors[i][1] = currentColor[1];
+			colors[i][2] = currentColor[2];
+			colors[i][3] = currentColor[3];
+		}
+
+		if (RenderBitmapShaderTriangles(Texture, positions, uvs, colors))
+		{
+			if (Alpha > 0.f)
+			{
+				glColor4f(1.f, 1.f, 1.f, 1.f);
+			}
+			return;
+		}
+	}
+#endif // SHADER_VERSION_TEST
 
 	/*glBegin(GL_TRIANGLE_FAN);
 	for (int i = 0; i < 4; i++)
@@ -1737,6 +2202,52 @@ void RenderBitmapRotate(int Texture, float x, float y, float Width, float Height
 	TEXCOORD(c[3], u + uWidth, v);
 	TEXCOORD(c[2], u + uWidth, v + vHeight);
 	TEXCOORD(c[1], u, v + vHeight);
+
+#ifdef SHADER_VERSION_TEST
+	if (Texture >= 0 && g_EnableShaderVersionTest)
+	{
+		float currentColor[4] = { 1.f, 1.f, 1.f, 1.f };
+		glGetFloatv(GL_CURRENT_COLOR, currentColor);
+
+		vec3_t v0, v1, v2, v3;
+		VectorRotate(p[0], Matrix, v0);
+		VectorRotate(p[1], Matrix, v1);
+		VectorRotate(p[2], Matrix, v2);
+		VectorRotate(p[3], Matrix, v3);
+
+		const float positions[6][3] = {
+			{ v0[0] + x, v0[1] + y, 0.f },
+			{ v1[0] + x, v1[1] + y, 0.f },
+			{ v2[0] + x, v2[1] + y, 0.f },
+			{ v0[0] + x, v0[1] + y, 0.f },
+			{ v2[0] + x, v2[1] + y, 0.f },
+			{ v3[0] + x, v3[1] + y, 0.f },
+		};
+
+		const float uvs[6][2] = {
+			{ c[0][0], c[0][1] },
+			{ c[1][0], c[1][1] },
+			{ c[2][0], c[2][1] },
+			{ c[0][0], c[0][1] },
+			{ c[2][0], c[2][1] },
+			{ c[3][0], c[3][1] },
+		};
+
+		float colors[6][4];
+		for (int i = 0; i < 6; ++i)
+		{
+			colors[i][0] = currentColor[0];
+			colors[i][1] = currentColor[1];
+			colors[i][2] = currentColor[2];
+			colors[i][3] = currentColor[3];
+		}
+
+		if (RenderBitmapShaderTriangles(Texture, positions, uvs, colors))
+		{
+			return;
+		}
+	}
+#endif // SHADER_VERSION_TEST
 
 	glBegin(GL_TRIANGLE_FAN);
 	for (int i = 0; i < 4; i++)
@@ -1890,6 +2401,46 @@ void RenderBitmapLocalRotate(int Texture, float x, float y, float Width, float H
 	TEXCOORD(c[2], u + uWidth, v + vHeight);
 	TEXCOORD(c[1], u, v + vHeight);
 
+#ifdef SHADER_VERSION_TEST
+	if (Texture >= 0 && g_EnableShaderVersionTest)
+	{
+		float currentColor[4] = { 1.f, 1.f, 1.f, 1.f };
+		glGetFloatv(GL_CURRENT_COLOR, currentColor);
+
+		const float positions[6][3] = {
+			{ p[0][0], p[0][1], 0.f },
+			{ p[1][0], p[1][1], 0.f },
+			{ p[2][0], p[2][1], 0.f },
+			{ p[0][0], p[0][1], 0.f },
+			{ p[2][0], p[2][1], 0.f },
+			{ p[3][0], p[3][1], 0.f },
+		};
+
+		const float uvs[6][2] = {
+			{ c[0][0], c[0][1] },
+			{ c[1][0], c[1][1] },
+			{ c[2][0], c[2][1] },
+			{ c[0][0], c[0][1] },
+			{ c[2][0], c[2][1] },
+			{ c[3][0], c[3][1] },
+		};
+
+		float colors[6][4];
+		for (int i = 0; i < 6; ++i)
+		{
+			colors[i][0] = currentColor[0];
+			colors[i][1] = currentColor[1];
+			colors[i][2] = currentColor[2];
+			colors[i][3] = currentColor[3];
+		}
+
+		if (RenderBitmapShaderTriangles(Texture, positions, uvs, colors))
+		{
+			return;
+		}
+	}
+#endif // SHADER_VERSION_TEST
+
 	glBegin(GL_TRIANGLE_FAN);
 	for (int i = 0; i < 4; i++)
 	{
@@ -1927,6 +2478,46 @@ void RenderNoBitmapLocalRotate(int Texture, float x, float y, float Width, float
 	TEXCOORD(c[3], u + uWidth, v);
 	TEXCOORD(c[2], u + uWidth, v + vHeight);
 	TEXCOORD(c[1], u, v + vHeight);
+
+#ifdef SHADER_VERSION_TEST
+	if (Texture >= 0 && g_EnableShaderVersionTest)
+	{
+		float currentColor[4] = { 1.f, 1.f, 1.f, 1.f };
+		glGetFloatv(GL_CURRENT_COLOR, currentColor);
+
+		const float positions[6][3] = {
+			{ p[0][0], p[0][1], 0.f },
+			{ p[1][0], p[1][1], 0.f },
+			{ p[2][0], p[2][1], 0.f },
+			{ p[0][0], p[0][1], 0.f },
+			{ p[2][0], p[2][1], 0.f },
+			{ p[3][0], p[3][1], 0.f },
+		};
+
+		const float uvs[6][2] = {
+			{ c[0][0], c[0][1] },
+			{ c[1][0], c[1][1] },
+			{ c[2][0], c[2][1] },
+			{ c[0][0], c[0][1] },
+			{ c[2][0], c[2][1] },
+			{ c[3][0], c[3][1] },
+		};
+
+		float colors[6][4];
+		for (int i = 0; i < 6; ++i)
+		{
+			colors[i][0] = currentColor[0];
+			colors[i][1] = currentColor[1];
+			colors[i][2] = currentColor[2];
+			colors[i][3] = currentColor[3];
+		}
+
+		if (RenderBitmapShaderTriangles(Texture, positions, uvs, colors))
+		{
+			return;
+		}
+	}
+#endif // SHADER_VERSION_TEST
 
 	glBegin(GL_TRIANGLE_FAN);
 	for (int i = 0; i < 4; i++)
@@ -1972,6 +2563,52 @@ void RenderBitmapLocalRotate(int Texture, float x, float y, float Width, float H
 	Vector(0, 0, Rotate, Angle);
 	AngleMatrix(Angle, Matrix);
 
+#ifdef SHADER_VERSION_TEST
+	if (Texture >= 0 && g_EnableShaderVersionTest)
+	{
+		float currentColor[4] = { 1.f, 1.f, 1.f, 1.f };
+		glGetFloatv(GL_CURRENT_COLOR, currentColor);
+
+		vec3_t v0, v1, v2, v3;
+		VectorRotate(p[0], Matrix, v0);
+		VectorRotate(p[1], Matrix, v1);
+		VectorRotate(p[2], Matrix, v2);
+		VectorRotate(p[3], Matrix, v3);
+
+		const float positions[6][3] = {
+			{ vertex[0][0], vertex[0][1], 0.f },
+			{ vertex[1][0], vertex[1][1], 0.f },
+			{ vertex[2][0], vertex[2][1], 0.f },
+			{ vertex[0][0], vertex[0][1], 0.f },
+			{ vertex[2][0], vertex[2][1], 0.f },
+			{ vertex[3][0], vertex[3][1], 0.f },
+		};
+
+		const float uvs[6][2] = {
+			{ v0[0] + PosX, v0[1] + PosY },
+			{ v1[0] + PosX, v1[1] + PosY },
+			{ v2[0] + PosX, v2[1] + PosY },
+			{ v0[0] + PosX, v0[1] + PosY },
+			{ v2[0] + PosX, v2[1] + PosY },
+			{ v3[0] + PosX, v3[1] + PosY },
+		};
+
+		float colors[6][4];
+		for (int i = 0; i < 6; ++i)
+		{
+			colors[i][0] = currentColor[0];
+			colors[i][1] = currentColor[1];
+			colors[i][2] = currentColor[2];
+			colors[i][3] = currentColor[3];
+		}
+
+		if (RenderBitmapShaderTriangles(Texture, positions, uvs, colors))
+		{
+			return;
+		}
+	}
+#endif // SHADER_VERSION_TEST
+
 	glBegin(GL_TRIANGLE_FAN);
 	for (int i = 0; i < 4; i++)
 	{
@@ -2011,6 +2648,52 @@ void RenderBitmapLocalRotate2(int Texture, float x, float y, float Width, float 
 	TEXCOORD(c[3], u + uWidth, v);
 	TEXCOORD(c[2], u + uWidth, v + vHeight);
 	TEXCOORD(c[1], u, v + vHeight);
+
+#ifdef SHADER_VERSION_TEST
+	if (Texture >= 0 && g_EnableShaderVersionTest)
+	{
+		float currentColor[4] = { 1.f, 1.f, 1.f, 1.f };
+		glGetFloatv(GL_CURRENT_COLOR, currentColor);
+
+		vec3_t v0, v1, v2, v3;
+		VectorRotate(p[0], Matrix, v0);
+		VectorRotate(p[1], Matrix, v1);
+		VectorRotate(p[2], Matrix, v2);
+		VectorRotate(p[3], Matrix, v3);
+
+		const float positions[6][3] = {
+			{ v0[0] + x, v0[1] + y, 0.f },
+			{ v1[0] + x, v1[1] + y, 0.f },
+			{ v2[0] + x, v2[1] + y, 0.f },
+			{ v0[0] + x, v0[1] + y, 0.f },
+			{ v2[0] + x, v2[1] + y, 0.f },
+			{ v3[0] + x, v3[1] + y, 0.f },
+		};
+
+		const float uvs[6][2] = {
+			{ c[0][0], c[0][1] },
+			{ c[1][0], c[1][1] },
+			{ c[2][0], c[2][1] },
+			{ c[0][0], c[0][1] },
+			{ c[2][0], c[2][1] },
+			{ c[3][0], c[3][1] },
+		};
+
+		float colors[6][4];
+		for (int i = 0; i < 6; ++i)
+		{
+			colors[i][0] = currentColor[0];
+			colors[i][1] = currentColor[1];
+			colors[i][2] = currentColor[2];
+			colors[i][3] = currentColor[3];
+		}
+
+		if (RenderBitmapShaderTriangles(Texture, positions, uvs, colors))
+		{
+			return;
+		}
+	}
+#endif // SHADER_VERSION_TEST
 
 	glBegin(GL_TRIANGLE_FAN);
 	for (int i = 0; i < 4; i++)
@@ -2053,6 +2736,52 @@ void RenderBitmapLocalProjection(int Texture, float x, float y, float w, float h
 
 	BindTexture(Texture);
 
+#ifdef SHADER_VERSION_TEST
+	if (Texture >= 0 && g_EnableShaderVersionTest)
+	{
+		float currentColor[4] = { 1.f, 1.f, 1.f, 1.f };
+		glGetFloatv(GL_CURRENT_COLOR, currentColor);
+
+		vec3_t v0, v1, v2, v3;
+		VectorRotate(sp[0], Matrix, v0);
+		VectorRotate(sp[1], Matrix, v1);
+		VectorRotate(sp[2], Matrix, v2);
+		VectorRotate(sp[3], Matrix, v3);
+
+		const float positions[6][3] = {
+			{ v0[0] + x, v0[1] + y, 0.f },
+			{ v1[0] + x, v1[1] + y, 0.f },
+			{ v2[0] + x, v2[1] + y, 0.f },
+			{ v0[0] + x, v0[1] + y, 0.f },
+			{ v2[0] + x, v2[1] + y, 0.f },
+			{ v3[0] + x, v3[1] + y, 0.f },
+		};
+
+		const float uvs[6][2] = {
+			{ coord2[0][0], coord2[0][1] },
+			{ coord2[1][0], coord2[1][1] },
+			{ coord2[2][0], coord2[2][1] },
+			{ coord2[0][0], coord2[0][1] },
+			{ coord2[2][0], coord2[2][1] },
+			{ coord2[3][0], coord2[3][1] },
+		};
+
+		float colors[6][4];
+		for (int i = 0; i < 6; ++i)
+		{
+			colors[i][0] = currentColor[0];
+			colors[i][1] = currentColor[1];
+			colors[i][2] = currentColor[2];
+			colors[i][3] = currentColor[3];
+		}
+
+		if (RenderBitmapShaderTriangles(Texture, positions, uvs, colors))
+		{
+			return;
+		}
+	}
+#endif // SHADER_VERSION_TEST
+
 	glBegin(GL_TRIANGLE_FAN);
 
 	for (int n = 0; n < 4; n++)
@@ -2092,6 +2821,43 @@ void RenderBitmapAlpha(int Texture, float sx, float sy, float Width, float Heigh
 			if (y == 0) { Alpha[0] = 0.f; Alpha[3] = 0.f; }
 			if (y == 3) { Alpha[1] = 0.f; Alpha[2] = 0.f; }
 
+#ifdef SHADER_VERSION_TEST
+			if (Texture >= 0 && g_EnableShaderVersionTest)
+			{
+				const float positions[6][3] = {
+					{ p[0][0], p[0][1], 0.f },
+					{ p[1][0], p[1][1], 0.f },
+					{ p[2][0], p[2][1], 0.f },
+					{ p[0][0], p[0][1], 0.f },
+					{ p[2][0], p[2][1], 0.f },
+					{ p[3][0], p[3][1], 0.f },
+				};
+
+				const float uvs[6][2] = {
+					{ c[0][0], c[0][1] },
+					{ c[1][0], c[1][1] },
+					{ c[2][0], c[2][1] },
+					{ c[0][0], c[0][1] },
+					{ c[2][0], c[2][1] },
+					{ c[3][0], c[3][1] },
+				};
+
+				const float colors[6][4] = {
+					{ 1.f, 1.f, 1.f, Alpha[0] },
+					{ 1.f, 1.f, 1.f, Alpha[1] },
+					{ 1.f, 1.f, 1.f, Alpha[2] },
+					{ 1.f, 1.f, 1.f, Alpha[0] },
+					{ 1.f, 1.f, 1.f, Alpha[2] },
+					{ 1.f, 1.f, 1.f, Alpha[3] },
+				};
+
+				if (RenderBitmapShaderTriangles(Texture, positions, uvs, colors))
+				{
+					continue;
+				}
+			}
+#endif // SHADER_VERSION_TEST
+
 			glBegin(GL_TRIANGLE_FAN);
 			for (int i = 0; i < 4; i++)
 			{
@@ -2124,6 +2890,46 @@ void RenderBitmapUV(int Texture, float x, float y, float Width, float Height, fl
 	TEXCOORD(c[3], u + uWidth, v);
 	TEXCOORD(c[2], u + uWidth, v + vHeight);
 	TEXCOORD(c[1], u, v + vHeight - vHeight * 0.25f);
+
+#ifdef SHADER_VERSION_TEST
+	if (Texture >= 0 && g_EnableShaderVersionTest)
+	{
+		float currentColor[4] = { 1.f, 1.f, 1.f, 1.f };
+		glGetFloatv(GL_CURRENT_COLOR, currentColor);
+
+		const float positions[6][3] = {
+			{ p[0][0], p[0][1], 0.f },
+			{ p[1][0], p[1][1], 0.f },
+			{ p[2][0], p[2][1], 0.f },
+			{ p[0][0], p[0][1], 0.f },
+			{ p[2][0], p[2][1], 0.f },
+			{ p[3][0], p[3][1], 0.f },
+		};
+
+		const float uvs[6][2] = {
+			{ c[0][0], c[0][1] },
+			{ c[1][0], c[1][1] },
+			{ c[2][0], c[2][1] },
+			{ c[0][0], c[0][1] },
+			{ c[2][0], c[2][1] },
+			{ c[3][0], c[3][1] },
+		};
+
+		float colors[6][4];
+		for (int i = 0; i < 6; ++i)
+		{
+			colors[i][0] = currentColor[0];
+			colors[i][1] = currentColor[1];
+			colors[i][2] = currentColor[2];
+			colors[i][3] = currentColor[3];
+		}
+
+		if (RenderBitmapShaderTriangles(Texture, positions, uvs, colors))
+		{
+			return;
+		}
+	}
+#endif // SHADER_VERSION_TEST
 
 	glBegin(GL_TRIANGLE_FAN);
 	for (int i = 0; i < 4; i++)

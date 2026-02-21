@@ -5000,7 +5000,7 @@ void MoveJoint(JOINT* o, int iIndex)
 				}
 				else
 				{
-					assert(!"µð¹ö±ë");
+					assert(!"ï¿½ï¿½ï¿½ï¿½ï¿½");
 				}
 			}
 			break;
@@ -5210,7 +5210,7 @@ void MoveJoint(JOINT* o, int iIndex)
 				o->Light[2] -= timefac(10.12f);
 			}
 		}
-		else if (o->SubType == 1 || o->SubType == 2 || o->SubType == 3 || o->SubType == 5 || o->SubType == 6 || o->SubType == 7) //  À§¿¡¼­ ¾Æ·¡·Î ³»·Á¿À´Â ¹ø°³.
+		else if (o->SubType == 1 || o->SubType == 2 || o->SubType == 3 || o->SubType == 5 || o->SubType == 6 || o->SubType == 7) //  ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Æ·ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½.
 
 		{
 			VectorCopy(o->StartPosition, o->Position);
@@ -5798,7 +5798,7 @@ void MoveJoint(JOINT* o, int iIndex)
 			else
 			{
 				if (fLife < 10.f)
-				{	// ³¡
+				{	// ï¿½ï¿½
 					fPos = fLife * 7.0f;
 				}
 				else
@@ -6042,7 +6042,7 @@ void MoveJoint(JOINT* o, int iIndex)
 		{
 			if (o->Target->Live)
 			{
-				o->LifeTime = 100.f; //¹«ÇÑ
+				o->LifeTime = 100.f; //ï¿½ï¿½ï¿½ï¿½
 				o->life_time_work = standlimit((int)o->LifeTime);
 
 				if (rand() % 3 == 0)
@@ -6508,8 +6508,8 @@ void MoveJoint(JOINT* o, int iIndex)
 							CreateParticleSync(BITMAP_FIRE, o->Position, o->Angle, o->Light, 0);
 						}
 
-						CreateJointSync(BITMAP_JOINT_THUNDER, Light, o->Position, o->Angle, 3, NULL, rand() % 10 + 5.f, 5, 10); //  Àü±â 
-						CreateJointSync(BITMAP_JOINT_THUNDER, Light, o->Position, o->Angle, 3, NULL, rand() % 8 + 4.f, 5, 10); //  Àü±â 
+						CreateJointSync(BITMAP_JOINT_THUNDER, Light, o->Position, o->Angle, 3, NULL, rand() % 10 + 5.f, 5, 10); //  ï¿½ï¿½ï¿½ï¿½ 
+						CreateJointSync(BITMAP_JOINT_THUNDER, Light, o->Position, o->Angle, 3, NULL, rand() % 8 + 4.f, 5, 10); //  ï¿½ï¿½ï¿½ï¿½ 
 					}
 				}
 				if (o->SubType == 0)
@@ -7256,6 +7256,13 @@ void RenderJoints(BYTE bRenderOneMore)
 	{
 		return;
 	}
+
+#ifdef SHADER_VERSION_TEST
+	glUseProgram(0);
+	glBindVertexArray(0);
+	glActiveTexture(GL_TEXTURE0);
+	glClientActiveTexture(GL_TEXTURE0);
+#endif // SHADER_VERSION_TEST
 
 	for (int i = 0; i < MAX_JOINTS; i++)
 	{
