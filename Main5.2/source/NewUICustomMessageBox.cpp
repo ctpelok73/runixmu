@@ -1,4 +1,4 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "NewUICustomMessageBox.h"
 #include "DSPlaySound.h"
 #include "UIControls.h"
@@ -5680,12 +5680,12 @@ void SEASON3B::CLuckyTradeMenuMsgBox::RenderTexts()
 	g_pRenderText->SetBgColor(0, 0, 0, 0);
 	g_pRenderText->SetTextColor(255, 255, 255, 255);
 	g_pRenderText->SetFont(g_hFontBold);
-	sprintf(szText, "·°Å°¾ÆÀÌÅÛ ±³È¯NPC");	// "LuckyItem Trade NPC"
+	sprintf(szText, u8"럭키아이템 교환NPC");	// "LuckyItem Trade NPC"
 	g_pRenderText->RenderText(fPos_x, fPos_y, szText, MSGBOX_WIDTH - 20.0f, 0, RT3_SORT_CENTER);
 
 	fPos_y += 15;
 	g_pRenderText->SetFont(g_hFont);
-	sprintf(szText, "·°Å°¾ÆÀÌÅÛÀ¸·Î ±³È¯ÇÏ°Å³ª Á¦·ÃÇÒ ¼ö ÀÖ½À´Ï´.");
+	sprintf(szText, u8"럭키아이템으로 교환하거나 제련할 수 있습니다.");
 	g_pRenderText->RenderText(fPos_x, fPos_y + 1 * 18, szText, MSGBOX_WIDTH - 20.0f, 0, RT3_SORT_CENTER);
 }
 

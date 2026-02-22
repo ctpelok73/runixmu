@@ -642,7 +642,7 @@ void SEASON3B::CNewUIMixExpansion::SendRequestInfo(int index, BYTE Type)
 {
 	if (Type == 0)
 	{
-		if (index < m_InfoBtnCnt.size())
+		if (index >= 0 && static_cast<size_t>(index) < m_InfoBtnCnt.size())
 		{
 			int mixIndex = m_InfoBtnCnt[index].iMixIndex;
 			SendRequestMixIndex(mixIndex);
@@ -753,7 +753,7 @@ bool SEASON3B::CNewUIMixExpansion::IsMixItem(ITEM* pItemObj)
 	if (this->m_iTalismanOfChaos != 0x1FFF && this->m_iTalismanOfChaos == pItemObj->Type)
 		return true;
 
-	for (int i = 0; i < mixRecipient.size(); i++)
+	for (size_t i = 0; i < mixRecipient.size(); i++)
 	{
 		if ((&mixRecipient[i])->IsMixItem(pItemObj))
 		{

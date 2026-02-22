@@ -25,7 +25,7 @@ bool CGMLuaBase::runtime_link(std::vector<BYTE> DataBytes)
 		lua.script(scriptContent);
 		return true;
 	}
-	catch (const sol::error& e) {
+	catch (const sol::error&) {
 		//std::cerr << "Error loading script from buffer: " << e.what() << std::endl;
 	}
 	return false;

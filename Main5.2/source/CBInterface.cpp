@@ -597,7 +597,7 @@ bool CB_Interface::DrawSelectBar(int X, int Y, int W, int H, int* SelectNum, std
 	{
 		int CountSelectBar = 1;
 		gInterface->DrawBarForm(X + 15, Y + 41 + (15), W - 25, (H - 5) * (Data.size()), 0.0, 0.0, 0.0, 0.8);
-		for (int i = 0; i < Data.size(); i++)
+		for (size_t i = 0; i < Data.size(); i++)
 		{
 			DWORD SelectHover = 0x0;
 			if (SEASON3B::CheckMouseIn(X + 15, Y + 41 + (15 * CountSelectBar), W + 20, 15))

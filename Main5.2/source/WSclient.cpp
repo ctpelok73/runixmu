@@ -12556,7 +12556,7 @@ void DataSend(BYTE* byData, DWORD size) // OK
 	if ((BYTE)byData[0] == 0xC2 || (BYTE)byData[0] == 0xC4)
 	{
 		spe.Init(byData[0], byData[3]);
-		for (int n = 4; n < size; n++)
+		for (DWORD n = 4; n < size; n++)
 		{
 			spe << byData[n];
 		}
@@ -12565,7 +12565,7 @@ void DataSend(BYTE* byData, DWORD size) // OK
 	{
 		spe.Init(byData[0], byData[2]);
 		//spe.AddNullData(1);
-		for (int n = 3; n < size; n++)
+		for (DWORD n = 3; n < size; n++)
 		{
 			spe << byData[n];
 		}

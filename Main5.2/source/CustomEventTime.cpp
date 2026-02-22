@@ -176,7 +176,6 @@ void CCustomEventTime::DrawEventTimePanelWindow()
 			this->EventTimeTickCount = GetTickCount();
 		}
 
-		char text1[20];
 		char text2[30];
 		int totalseconds;
 		int hours;
@@ -186,7 +185,7 @@ void CCustomEventTime::DrawEventTimePanelWindow()
 
 		int line = 0;
 
-		for (int i = 0; i < this->mNewDataEventTime.size(); i++)
+		for (size_t i = 0; i < this->mNewDataEventTime.size(); i++)
 		{
 			if (this->mNewDataEventTime[i].time <= -1)
 			{
@@ -233,7 +232,7 @@ void CCustomEventTime::DrawEventTimePanelWindow()
 				Color = 0xFFFFFFB8;
 			}
 			//gInterface->DrawBarForm(StartX + 20, StartBody + 37, MainWidth - 50, 15, 0.5445, 0.55, 0.549, 0.8);
-			TextDraw(g_hFontBold, StartX + 10, StartBody + 58 + (line), 0xFFFF478A8, 0x0, RowCol, 0, 3, TEXT(this->mNewDataEventTime[i].NameEvent));
+			TextDraw(g_hFontBold, StartX + 10, StartBody + 58 + (line), 0xFFFF478A, 0x0, RowCol, 0, 3, TEXT(this->mNewDataEventTime[i].NameEvent));
 			TextDraw(g_hFontBold, StartX + 10 + (RowCol * 1), StartBody + 58 + (line), 0x61FFD0A8, 0x0, RowCol, 0, 3, TEXT(this->mNewDataEventTime[i].DesString));
 			TextDraw(g_hFontBold, StartX + 10 + (RowCol * 2), StartBody + 58 + (line), Color, 0x0, RowCol, 0, 3, TEXT(text2));
 
