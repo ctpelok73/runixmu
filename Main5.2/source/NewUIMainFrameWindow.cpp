@@ -1268,19 +1268,28 @@ int SEASON3B::CNewUIMainFrameWindow::RenderExperience(float x, float y, float wi
 	}
 	iExp = (int)fExpBarNum;
 
+	float expTextY = y - 1;
+	float expTextX = x + (width * 0.75f) + 7;
+
+	if (gmProtect->LookAndFeel == 3)
+	{
+		expTextY = y - 7;
+		expTextX = x + width + 14.f;
+	}
+
 	EnableAlphaTest(true);
 #if MAIN_UPDATE > 603
-	SEASON3B::RenderNumber(x + (width * 0.75f) + 7, y - 1, iExp, 0.7);
+	SEASON3B::RenderNumber(expTextX, expTextY, iExp, 0.7);
 #else
 	if (gmProtect->checkold_school())
 	{
 		glColor3f(0.91000003, 0.81, 0.60000002);
-		SEASON3B::RenderNumber(x + (width * 0.75f) + 7, y - 1, iExp, 1.f);
+		SEASON3B::RenderNumber(expTextX, expTextY, iExp, 1.f);
 		glColor3f(1.0, 1.0, 1.0);
 	}
 	else
 	{
-		SEASON3B::RenderNumber(x + (width * 0.75f) + 7, y - 1, iExp, 1.f);
+		SEASON3B::RenderNumber(expTextX, expTextY, iExp, 1.f);
 	}
 #endif
 
