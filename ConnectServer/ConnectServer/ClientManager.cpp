@@ -122,7 +122,7 @@ void CClientManager::AddClient(int index, char* ip, SOCKET socket) // OK
 
 void CClientManager::AddClient(char* HardwareId)
 {
-	strcpy(this->m_HardwareId, HardwareId);
+	strcpy_s(this->m_HardwareId, sizeof(this->m_HardwareId), HardwareId);
 
 	gmHardwareId.InsertHardwareId(this->m_HardwareId);
 }

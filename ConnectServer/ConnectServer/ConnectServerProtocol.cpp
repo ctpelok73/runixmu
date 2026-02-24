@@ -191,9 +191,9 @@ void CCServerVersionRecv(PMSG_SERVER_VERSION_RECV* lpMsg, int index)
 
 				int MaxSize = MAX_MAIN_PACKET_SIZE - sizeof(PMSG_SERVER_FILE_VERSION_SEND);
 
-				for (size_t Version = ClientVersion; Version <= ServerVersion; Version++)
+				for (int version = ClientVersion; version <= ServerVersion; version++)
 				{
-					std::vector<BYTE> data = GetServerVersion(Version);
+					std::vector<BYTE> data = GetServerVersion(version);
 
 					if (data.empty())
 					{
@@ -206,27 +206,29 @@ void CCServerVersionRecv(PMSG_SERVER_VERSION_RECV* lpMsg, int index)
 
 					while (offset < totalSize)
 					{
-						size_t chunkSize = min(MaxSize, totalSize - offset);
+						size_t remaining = totalSize - offset;
+						size_t maxChunkSize = (size_t)MaxSize;
+						size_t chunkSize = (remaining < maxChunkSize) ? remaining : maxChunkSize;
 
 						BYTE send[MAX_MAIN_PACKET_SIZE];
-						memset(send, 0, sizeof(send)); // Asegúrate de inicializar el buffer
+						memset(send, 0, sizeof(send)); // Asegï¿½rate de inicializar el buffer
 
 						PMSG_SERVER_FILE_VERSION_SEND pMsg;
 						pMsg.header.set(0xF4, 0x08, 0);
 
-						pMsg.TotalSize = totalSize;
-						pMsg.ChunkSize = chunkSize;
-						pMsg.Offset = offset;
-						pMsg.Version = Version;
+						pMsg.TotalSize = (DWORD)totalSize;
+						pMsg.ChunkSize = (DWORD)chunkSize;
+						pMsg.Offset = (DWORD)offset;
+						pMsg.Version = (WORD)version;
 
 						int size = sizeof(pMsg);
-						pMsg.header.setSize(size + chunkSize);
+						pMsg.header.setSize((WORD)(size + chunkSize));
 
-						// Copiar los datos de la porción del archivo al buffer
+						// Copiar los datos de la porciï¿½n del archivo al buffer
 						memcpy(&send[size], data.data() + offset, chunkSize);
 						memcpy(send, &pMsg, sizeof(PMSG_SERVER_FILE_VERSION_SEND));
 
-						// Actualizar los campos de tamaño del header
+						// Actualizar los campos de tamaï¿½o del header
 						size += chunkSize;
 
 						// Enviar el paquete

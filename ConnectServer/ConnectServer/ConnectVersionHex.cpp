@@ -28,18 +28,17 @@ size_t ConnectVersionHex::GetFileSize()
 
 std::vector<BYTE> ConnectVersionHex::GetFileBuffer()
 {
-	return buffer; // Si el buffer está vacío, retornará un vector vacío
+	return buffer; // Si el buffer estï¿½ vacï¿½o, retornarï¿½ un vector vacï¿½o
 }
 
 int ConnectVersionHex::OpenDataVersion(int version, std::string filename)
 {
 	Version = version;
 
-	FILE* fp = fopen(filename.c_str(), "rb");
-
-	if (fp == NULL)
+	FILE* fp = 0;
+	if (fopen_s(&fp, filename.c_str(), "rb") != 0 || fp == 0)
 	{
-		return (-1);
+		return -1;
 	}
 
 	fseek(fp, 0, SEEK_END);
@@ -119,7 +118,7 @@ std::vector<BYTE> GetServerVersion(int version)
 			// Obtiene el buffer como un vector de bytes
 			EncData = VersionHex[i].GetFileBuffer();
 
-			// Retorna el vector si no está vacío
+			// Retorna el vector si no estï¿½ vacï¿½o
 			if (!EncData.empty())
 			{
 				return EncData;
@@ -127,6 +126,6 @@ std::vector<BYTE> GetServerVersion(int version)
 		}
 	}
 
-	// Si no se encuentra la versión, retorna un vector vacío
+	// Si no se encuentra la versiï¿½n, retorna un vector vacï¿½o
 	return EncData;
 }
