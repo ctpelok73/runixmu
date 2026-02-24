@@ -1709,7 +1709,7 @@ void RenderBitmap(int Texture, float x, float y, float Width, float Height, floa
 
 #ifdef SHADER_VERSION_TEST
 	GLuint shader_id = gShaderGL->GetShaderId();
-	if (Texture >= 0 && shader_id != 0 && g_EnableShaderVersionTest)
+	if (shader_id != 0 && g_EnableShaderVersionTest)
 	{
 		static GLuint s_vao = 0;
 		static GLuint s_vboPos = 0;
@@ -1783,6 +1783,8 @@ void RenderBitmap(int Texture, float x, float y, float Width, float Height, floa
 		gShaderGL->run_projection();
 
 		glUseProgram(shader_id);
+		gShaderGL->setInt("useTexture", 1);
+		gShaderGL->setInt("fogEnabled", 0);
 		{
 			GLuint glTex = 0;
 			if (Texture >= 0)
@@ -1848,7 +1850,7 @@ void RenderBitmap(int Texture, float x, float y, float Width, float Height, floa
 				}
 			}
 
-			gShaderGL->SetAlphaTextureMode(alphaTextureMode);
+			gShaderGL->setInt("alphaTextureMode", alphaTextureMode);
 		}
 		glBindVertexArray(s_vao);
 
@@ -1960,6 +1962,9 @@ static bool RenderBitmapShaderTriangles(int Texture, const float positions[6][3]
 	gShaderGL->run_projection();
 
 	glUseProgram(shader_id);
+
+	gShaderGL->setInt("useTexture", 1);
+	gShaderGL->setInt("fogEnabled", 0);
 	{
 		GLuint glTex = 0;
 		if (Texture >= 0)
@@ -2025,7 +2030,7 @@ static bool RenderBitmapShaderTriangles(int Texture, const float positions[6][3]
 			}
 		}
 
-		gShaderGL->SetAlphaTextureMode(alphaTextureMode);
+		gShaderGL->setInt("alphaTextureMode", alphaTextureMode);
 	}
 
 	glBindVertexArray(s_vao);
@@ -2080,12 +2085,8 @@ void RenderNoBitmap(int Texture, float x, float y, float Width, float Height, fl
 	if (Texture >= 0 && g_EnableShaderVersionTest)
 	{
 		float currentColor[4] = { 1.f, 1.f, 1.f, 1.f };
-		glGetFloatv(GL_CURRENT_COLOR, currentColor);
 		if (Alpha > 0.f)
 		{
-			currentColor[0] = 1.f;
-			currentColor[1] = 1.f;
-			currentColor[2] = 1.f;
 			currentColor[3] = Alpha;
 		}
 
@@ -2207,7 +2208,6 @@ void RenderBitmapRotate(int Texture, float x, float y, float Width, float Height
 	if (Texture >= 0 && g_EnableShaderVersionTest)
 	{
 		float currentColor[4] = { 1.f, 1.f, 1.f, 1.f };
-		glGetFloatv(GL_CURRENT_COLOR, currentColor);
 
 		vec3_t v0, v1, v2, v3;
 		VectorRotate(p[0], Matrix, v0);

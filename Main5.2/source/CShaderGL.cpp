@@ -20,6 +20,8 @@ bool IsShaderProgramReady()
 CShaderGL::CShaderGL()
 {
 	shader_id = 0;
+	m_projection = glm::mat4(1.0f);
+	has_projection = false;
 	u_projection = -1;
 	u_view = -1;
 	u_model = -1;
@@ -317,6 +319,8 @@ void CShaderGL::SetPerspective(float Fov, float Aspect, float ZNear, float ZFar)
 	{
 		glUseProgram(shader_id);
 		glm::mat4 projection = glm::perspective(glm::radians(Fov), Aspect, ZNear, ZFar);
+		m_projection = projection;
+		has_projection = true;
 		this->setMat4("projection", projection);
 		glUseProgram(0);
 	}

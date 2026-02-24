@@ -38,6 +38,8 @@ public:
 	static CShaderGL* Instance();
 private:
 	GLuint shader_id;
+	glm::mat4 m_projection;
+	bool has_projection;
 	GLint u_projection;
 	GLint u_view;
 	GLint u_model;

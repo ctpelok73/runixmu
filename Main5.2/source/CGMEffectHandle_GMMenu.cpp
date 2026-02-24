@@ -1013,6 +1013,11 @@ void SEASON3B::CGFxEffectHandle::RenderFrame()
 
 	ImGui::Render();
 
+#ifdef SHADER_VERSION_TEST
+	glUseProgram(0);
+	glBindVertexArray(0);
+	glActiveTexture(GL_TEXTURE0);
+#endif // SHADER_VERSION_TEST
 	ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
 
 	if (windowOpen == false)
