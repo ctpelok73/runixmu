@@ -542,7 +542,7 @@ void FriendMemoReadReq(FHP_FRIEND_MEMO_RECV_REQ* lpMsg, int index)
 
 	gQueryManager.GetAsBinary("Memo", (BYTE*)pMsg.Memo, sizeof(pMsg.Memo));
 
-	pMsg.MemoSize = strlen(pMsg.Memo);
+	pMsg.MemoSize = (short)strlen(pMsg.Memo);
 
 	gQueryManager.Close();
 

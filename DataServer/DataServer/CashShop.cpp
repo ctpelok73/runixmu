@@ -535,7 +535,8 @@ void CCashShop::GDCashShopSubPointSaveRecv(SDHP_CASH_SHOP_SUB_POINT_SAVE_RECV* l
 
 		if (lpMsg->SubWCoinC > 0 )
 		{
-		gQueryManager.ExecQuery("INSERT INTO LOG_CREDITOS (login,valor,tipo) VALUES ('%s',%d,%d)",TargetAccount,((lpMsg->SubWCoinC>WCoinC)?0:(-lpMsg->SubWCoinC)),4);
+		int deltaWCoinC = (lpMsg->SubWCoinC>WCoinC)?0:(-(int)lpMsg->SubWCoinC);
+		gQueryManager.ExecQuery("INSERT INTO LOG_CREDITOS (login,valor,tipo) VALUES ('%s',%d,%d)",TargetAccount,deltaWCoinC,4);
 
 		gQueryManager.Close();
 		}

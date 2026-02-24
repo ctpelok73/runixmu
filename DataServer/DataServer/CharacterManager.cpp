@@ -6,6 +6,7 @@
 #include "CharacterManager.h"
 #include "ServerManager.h"
 #include "Util.h"
+#include <algorithm>
 
 CCharacterManager gCharacterManager;
 //////////////////////////////////////////////////////////////////////

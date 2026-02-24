@@ -728,7 +728,8 @@ void GJRegistroMainRecv(SDHP_REGISTRO_GS_SEND_JS* lpMsg, int index) // OK
 		else
 		{
 			gQueryManager.Close();
-			if (gQueryManager.ExecQuery("UPDATE MEMB_INFO set memb__pwd='%s',memb__pwdmd5='%s' where memb___id='%s' AND  sno__numb ='556114%s' AND phon_numb='%s' ", lpMsg->password, strdup(PassMD5.c_str()), lpMsg->account, lpMsg->numcode, lpMsg->sodienthoai) == TRUE && gQueryManager.Fetch() != SQL_NO_DATA)
+			char const* passMd5 = PassMD5.c_str();
+			if (gQueryManager.ExecQuery("UPDATE MEMB_INFO set memb__pwd='%s',memb__pwdmd5='%s' where memb___id='%s' AND  sno__numb ='556114%s' AND phon_numb='%s' ", lpMsg->password, passMd5, lpMsg->account, lpMsg->numcode, lpMsg->sodienthoai) == TRUE && gQueryManager.Fetch() != SQL_NO_DATA)
 			{
 				gQueryManager.Close();
 
