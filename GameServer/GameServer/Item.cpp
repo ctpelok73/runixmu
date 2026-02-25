@@ -1182,7 +1182,7 @@ void CItem::Value() // OK
 				price *= 2;
 			}
 
-			price *= (LONGLONG)(1 << this->m_Level);
+			price *= (LONGLONG)(1LL << this->m_Level);
 
 			//price *= (LONGLONG)this->m_Durability;
 
@@ -1981,7 +1981,7 @@ BOOL CItem::IsClassBot(char aClass, int ChangeUP)
 
 	if ((aClass < 0) || (aClass >= MAX_TYPE_PLAYER_BOTS))
 	{
-		LogAdd(LOG_BLUE, "Wrong Class:%d (%s %d)", aClass, __FILE__, __LINE__); // Å¬·¡½º ¿¡·¯ : %d (%s %d)
+		LogAdd(LOG_BLUE, "Wrong Class:%d (%s %d)", aClass, __FILE__, __LINE__); // Å¬ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ : %d (%s %d)
 		return 0;
 	}
 

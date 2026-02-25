@@ -196,7 +196,7 @@ void CGMHolyItem::GCInventoryListSend(int aIndex)
 
 	PMSG_INVENTORY_HOLY info;
 
-	for (size_t n = 0; n < HOLY_INVENTORY_SIZE; n++)
+	for (BYTE n = 0; n < HOLY_INVENTORY_SIZE; n++)
 	{
 		if (lpObj->HolyInventory[n].bItemindex != -1)
 		{

@@ -602,7 +602,8 @@ void PostMessageNew(char* name, char* message, char* text) // OK
 
 void SetLargeRand() // OK
 {
-	seed = std::mt19937(std::random_device());
+	std::random_device rd;
+	seed = std::mt19937(rd());
 	dist = std::uniform_int_distribution<int>(0, 2147483647);
 }
 
@@ -755,7 +756,7 @@ void PackFileEncrypt(const char* filename, BYTE* pbyBuffer, int MaxLine, int Siz
 	}
 }
 
-// Conversión entre wchar_t* y char*
+// Conversiï¿½n entre wchar_t* y char*
 std::string ConvertWStringToString(const std::wstring& wstr)
 {
 	std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> converter;
@@ -838,7 +839,7 @@ int ConvertCharToWideStr(std::wstring& wstrDest, LPCSTR lpString)
 #ifdef CHINESE_LANGUAGE
 	iConversionType = CHINESE_CP;
 #else
-	if (strcmp(lpString, "¸ÖÆ¼ ·Î±ä ¹öÁ¯") == 0)
+	if (strcmp(lpString, "ï¿½ï¿½Æ¼ ï¿½Î±ï¿½ ï¿½ï¿½ï¿½ï¿½") == 0)
 		iConversionType = (IsCharUTF8(lpString)) ? CP_UTF8 : 949;
 	else
 		iConversionType = (IsCharUTF8(lpString)) ? CP_UTF8 : 1252;
