@@ -57,6 +57,7 @@ float g_GMMenuPreviewRotateY = 0.0f;
 #include "CGMItemDropName.h"
 #include "jpexs.h"
 #include "CGMJewelOfAction.h"
+#include "ItemDropViewer.h"
 
 
 extern CUITextInputBox* g_pSingleTextInputBox;
@@ -3261,6 +3262,12 @@ void RenderItemName(ITEM_t* item, int Number, OBJECT* pObj, int ItemLevel, int I
 		g_pRenderText->SetTextColor(0xFFu, 0xE6u, 0xC8u, 0xFFu);
 		g_pRenderText->SetBgColor(0, 0, 0, 0xFFu);
 	}
+
+	if (Sort == false)
+	{
+		CItemDropViewer::Render(item, (int)_ScreenX, (int)_ScreenY);
+	}
+
 	glColor4fv(fCurColor);
 }
 

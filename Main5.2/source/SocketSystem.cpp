@@ -273,7 +273,7 @@ int CSocketItemMgr::AttachToolTipForSocketItem(const ITEM* pItem, int iTextNum)
 			}
 			else
 			{
-				assert(!"¼ÒÄÏ ÀÎµ¦½º ¿¡·¯");
+				assert(!"ï¿½ï¿½ï¿½ï¿½ ï¿½Îµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½");
 			}
 
 			sprintf(TextList[iTextNum], GlobalText[2655], i + 1, szOptionText);
@@ -297,6 +297,15 @@ int CSocketItemMgr::AttachToolTipForSocketItem(const ITEM* pItem, int iTextNum)
 			TextBold[iTextNum++] = false;
 		}
 		sprintf(TextList[iTextNum++], "\n");
+	}
+	else if (IsSocketItem(pItem))
+	{
+		sprintf(TextList[iTextNum], "\n"); ++iTextNum; ++SkipNum;
+		sprintf(TextList[iTextNum], "%s %s", GlobalText[2650], GlobalText[159]);
+		TextListColor[iTextNum] = TEXT_COLOR_PURPLE;
+		TextBold[iTextNum] = false;
+		++iTextNum;
+		sprintf(TextList[iTextNum], "\n"); ++iTextNum; ++SkipNum;
 	}
 #endif
 	return iTextNum;

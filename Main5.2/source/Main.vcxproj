@@ -247,6 +247,7 @@
     <ClCompile Include="CShaderGL.cpp" />
     <ClCompile Include="CustomEventTime.cpp" />
     <ClCompile Include="ItemTooltip.cpp" />
+    <ClCompile Include="ItemDropViewer.cpp" />
     <ClCompile Include="NewUIListGroupButton.cpp" />
     <ClCompile Include="NewUIMixExpansion.cpp" />
     <ClCompile Include="Protocol.cpp" />

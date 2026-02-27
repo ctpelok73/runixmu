@@ -800,13 +800,17 @@ void CNewUIItemTooltip::RenderItemTooltip(int sx, int sy, ITEM* pItem, bool Sell
 
 				float Height = (int)(((double)(TextSize.cy * ((LineNum - LineBack) - SkipLine)) + (double)(TextSize.cy * SkipLine) / 2.0) / fRateY);
 
-				int iScreenHeight = (gwinhandle->GetScreenY() - 60);
+				int margin = 60;
+				if (bRender3d) margin = 130;
+				int iScreenHeight = (gwinhandle->GetScreenY() - margin);
 
 				sy += INVENTORY_SCALE;
 				if (sy + Height > iScreenHeight)
 				{
-					sy += iScreenHeight - (sy + Height);
+					sy = iScreenHeight - Height;
 				}
+
+				if (sy < 0) sy = 0;
 				RenderTipTextList(sx, sy, LineNum, 0, RT3_SORT_CENTER, STRP_NONE, TRUE, bRender3d);
 				this->current_item = NULL;
 			}
