@@ -56,6 +56,10 @@ private :
 	FILE*	m_logfp;
 	CPacketQueue*	m_pPacketQueue;
 
+	HANDLE	m_hRecvThread;
+	bool	m_bThreadRunning;
+	static DWORD WINAPI RecvThreadProc(LPVOID lpParam);
+
 	BOOL ShutdownConnection(SOCKET sd);
 public:
 	

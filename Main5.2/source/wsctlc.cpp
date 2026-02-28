@@ -20,6 +20,9 @@ CWsctlc::CWsctlc()
 	m_LogPrint = 0;
 	m_logfp = NULL;
 	m_socket = NULL;
+
+	m_hRecvThread = NULL;
+	m_bThreadRunning = false;
 #ifdef PBG_LOG_PACKET_WINSOCKERROR
 	remove(PACKET_LOG_FILE);
 #endif //PBG_LOG_PACKET_WINSOCKERROR
@@ -101,70 +104,16 @@ BOOL CWsctlc::Startup()
 	err = WSAStartup(wVersionRequested, &wsaData);
 	if (err != 0)
 	{
-		g_ErrorReport.Write("Winsock DLL Initialize error.\r\n");
-		MessageBox(NULL, "WINSOCK DLL", "Error", MB_OK);
 		return FALSE;
 	}
 
 	if (LOBYTE(wsaData.wVersion) != 2 ||
-		HIBYTE(wsaData.wVersion) != 2) {
-		/* Tell the user that we could not find a usable */
-		/* WinSock DLL.                                  */
+		HIBYTE(wsaData.wVersion) != 2)
+	{
 		WSACleanup();
-		g_ErrorReport.Write("Winsock version low.\r\n");
-		MessageBox(NULL, "WINSOCK", "Error", MB_OK);
 		return FALSE;
 	}
-	m_socket = NULL;
-	m_iMaxSockets = wsaData.iMaxSockets;
-	LogPrintOn();
 	return TRUE;
-}
-
-
-BOOL CWsctlc::ShutdownConnection(SOCKET sd)
-{
-	// Disallow any further data sends.  This will tell the other side
-	// that we want to go away now.  If we skip this step, we don't
-	// shut the connection down nicely.
-	if (shutdown(sd, SD_SEND) == SOCKET_ERROR)
-	{
-		return false;
-	}
-
-	// Receive any extra data still sitting on the socket.  After all
-	// data is received, this call will block until the remote host
-	// acknowledges the TCP control packet sent by the shutdown above.
-	// Then we'll get a 0 back from recv, signalling that the remote
-	// host has closed its side of the connection.
-	char acReadBuffer[1024];
-
-	while (true)
-	{
-		int nNewBytes = MyRecvEnc(sd, acReadBuffer, 1024, 0);
-		if (nNewBytes == SOCKET_ERROR)
-		{
-			return false;
-		}
-		else if (nNewBytes != 0)
-		{
-			//  cerr << endl << "FYI, received " << nNewBytes <<
-			  //        " unexpected bytes during shutdown." << endl;
-		}
-		else
-		{
-			// Okay, we're done!
-			break;
-		}
-	}
-
-	// Close the socket.
-	if (closesocket(sd) == SOCKET_ERROR)
-	{
-		return false;
-	}
-
-	return true;
 }
 
 void CWsctlc::Cleanup()
@@ -196,6 +145,14 @@ int CWsctlc::Create(HWND hWnd, BOOL bGame)
 
 BOOL CWsctlc::Close()
 {
+	m_bThreadRunning = false;
+	if (m_hRecvThread)
+	{
+		WaitForSingleObject(m_hRecvThread, 1000);
+		CloseHandle(m_hRecvThread);
+		m_hRecvThread = NULL;
+	}
+
 	if (m_bGame)
 	{
 		if (g_bGameServerConnected == TRUE)
@@ -244,6 +201,16 @@ BOOL CWsctlc::Close(SOCKET& socket)
 		g_bGameServerConnected = FALSE;
 	}
 
+	LINGER linger;
+	linger.l_onoff = 1;
+	linger.l_linger = 0;
+
+	int iRetVal = setsockopt(socket, SOL_SOCKET, SO_LINGER, (char*)&linger, sizeof(linger));
+
+	if (iRetVal == SOCKET_ERROR)
+	{
+		WSAGetLastError();
+	}
 	closesocket(socket);
 	socket = INVALID_SOCKET;
 	return TRUE;
@@ -304,7 +271,7 @@ int CWsctlc::Connect(char* ip_addr, unsigned short port, DWORD WinMsgNum)
 	setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
 	setsockopt(m_socket, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout));
 
-	nResult = WSAAsyncSelect(m_socket, m_hWnd, WinMsgNum, FD_READ | FD_WRITE | FD_CLOSE);
+	nResult = WSAAsyncSelect(m_socket, m_hWnd, WinMsgNum, FD_WRITE | FD_CLOSE);
 
 	if (nResult == SOCKET_ERROR)
 	{
@@ -312,6 +279,10 @@ int CWsctlc::Connect(char* ip_addr, unsigned short port, DWORD WinMsgNum)
 		//cLogProc.Add("Client WSAAsyncSelect error %d", WSAGetLastError());
 		return FALSE;
 	}
+
+	m_bThreadRunning = true;
+	m_hRecvThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)RecvThreadProc, this, 0, NULL);
+
 	return 1;
 }
 
@@ -472,7 +443,7 @@ int CWsctlc::nRecv()
 		}
 
 
-		if (size <= 0 || size > MAX_RECVBUF) // Verificación extra de tamaño inválido
+		if (size <= 0 || size > MAX_RECVBUF) // Verificaciï¿½n extra de tamaï¿½o invï¿½lido
 		{
 #ifdef _DEBUG
 			LogPrint("size %d", size);
@@ -595,4 +566,41 @@ void CWsctlc::LogPrint(char* szlog, ...)
 	vsprintf(szBuffer, szlog, pArguments);
 	va_end(pArguments);
 	fprintf(m_logfp, "%s\n", szBuffer);
+}
+
+DWORD WINAPI CWsctlc::RecvThreadProc(LPVOID lpParam)
+{
+	CWsctlc* pThis = (CWsctlc*)lpParam;
+
+	while (pThis->m_bThreadRunning)
+	{
+		if (pThis->m_socket == INVALID_SOCKET)
+		{
+			Sleep(10);
+			continue;
+		}
+
+		fd_set fdread;
+		FD_ZERO(&fdread);
+		FD_SET(pThis->m_socket, &fdread);
+
+		timeval timeout;
+		timeout.tv_sec = 0;
+		timeout.tv_usec = 10000; // 10ms
+
+		int ret = select(0, &fdread, NULL, NULL, &timeout);
+
+		if (ret == SOCKET_ERROR)
+		{
+			Sleep(10);
+		}
+		else if (ret > 0)
+		{
+			if (FD_ISSET(pThis->m_socket, &fdread))
+			{
+				pThis->nRecv();
+			}
+		}
+	}
+	return 0;
 }
