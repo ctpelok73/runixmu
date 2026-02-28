@@ -45,6 +45,7 @@
 #include "w_MapHeaders.h"
 #include "MonkSystem.h"
 #include "CGMProtect.h"
+#include "NewUISystem.h"
 #include "./Utilities/Log/muConsoleDebug.h"
 #include "CGMItemWings.h"
 #include "CGMItemDropName.h"
@@ -6151,9 +6152,7 @@ void CreateDropItemName(ITEM_t* tItem)
 
 	if (pObject->Type == MODEL_POTION + 15)
 	{
-		//glColor3f(1.0, 0.80000001, 0.1);
-		item_info = GMItemMng->find(pObject->Type - MODEL_ITEM);
-		sprintf(tItem->Name, "%s %d", item_info->Name, Level);
+		sprintf(tItem->Name, "%s %d", GlobalText[100], Level);
 	}
 	else
 	{
@@ -6486,6 +6485,17 @@ void CreateDropItemName(ITEM_t* tItem)
 		{
 			item_info = GMItemMng->find(pObject->Type - MODEL_ITEM);
 			sprintf(tItem->Name, "%s", item_info->Name);
+		}
+	}
+
+	if (g_pNewItemTooltip != NULL && pItem->Type != ITEM_POTION + 15)
+	{
+		char tooltipName[100] = { 0 };
+		g_pNewItemTooltip->CreateItemName(pItem, tooltipName);
+
+		if (tooltipName[0] != '\0')
+		{
+			strncpy_s(tItem->Name, tooltipName, _TRUNCATE);
 		}
 	}
 }
