@@ -220,3 +220,7 @@ _pkginfo.txt
 
 # Local baseline snapshot folder
 GameServe_ORIG/
+
+# Local helper folders
+Util/
+scripts/
