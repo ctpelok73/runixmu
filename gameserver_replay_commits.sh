@@ -8,6 +8,16 @@ DRY_RUN=0
 TEST_CMD=""
 STOP_ON_FAIL=1
 
+ensure_clean_git_state() {
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    cat >&2 <<'EOF'
+Refusing to start replay: git working tree or index is dirty.
+Please commit/stash/discard local changes before running this script.
+EOF
+    exit 4
+  fi
+}
+
 usage() {
   cat <<USAGE
 Usage: $0 [options]
@@ -79,6 +89,10 @@ if [[ -n "$TARGET_BRANCH" ]]; then
   else
     git checkout -B "$TARGET_BRANCH" "$FROM_COMMIT"
   fi
+fi
+
+if [[ "$DRY_RUN" -eq 0 ]]; then
+  ensure_clean_git_state
 fi
 
 mapfile -t commits < <(git rev-list --reverse --ancestry-path "${FROM_COMMIT}..${TO_COMMIT}" -- GameServer)
