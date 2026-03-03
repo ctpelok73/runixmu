@@ -3,6 +3,7 @@
 #include "GameMain.h"
 #include "HackCheck.h"
 #include "ItemManager.h"
+#include "MultiLanguage.h"
 #include "ServerInfo.h"
 #include "SocketManager.h"
 #include "ThemidaSDK.h"
@@ -839,12 +840,10 @@ int ConvertCharToWideStr(std::wstring& wstrDest, LPCSTR lpString)
 #ifdef CHINESE_LANGUAGE
 	iConversionType = CHINESE_CP;
 #else
-	if (strcmp(lpString, "��Ƽ �α� ����") == 0)
-		iConversionType = (IsCharUTF8(lpString)) ? CP_UTF8 : 949;
-	else
-		iConversionType = (IsCharUTF8(lpString)) ? CP_UTF8 : 1252;
+	// Avoid hardcoded literal/codepage fallbacks that depend on source file encoding.
+	// Use UTF-8 when detected, otherwise use the configured server code page.
+	iConversionType = (IsCharUTF8(lpString)) ? CP_UTF8 : g_pMultiLanguage->GetCodePage();
 #endif
-	//iConversionType = (IsCharUTF8(lpString)) ? CP_UTF8 : iCodePage;
 
 	// calculate the number of characters needed to hold the wide-character version of the string.
 	nLenOfWideCharStr = MultiByteToWideChar(iConversionType, 0, lpString, -1, NULL, 0);
