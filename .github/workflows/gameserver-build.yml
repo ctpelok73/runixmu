@@ -1,0 +1,59 @@
+name: GameServer Build Artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: Build configuration
+        required: true
+        default: Release
+        type: choice
+        options:
+          - Release
+          - Debug
+      platform:
+        description: Build platform
+        required: true
+        default: Win32
+        type: choice
+        options:
+          - Win32
+          - x64
+  push:
+    branches:
+      - work
+      - gameserver-replay*
+    paths:
+      - 'GameServer/**'
+      - '.github/workflows/gameserver-build.yml'
+
+jobs:
+  build-gameserver:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore NuGet
+        run: nuget restore GameServer/GameServer.sln
+
+      - name: Build GameServer
+        run: >
+          msbuild GameServer/GameServer.sln
+          /m
+          /p:Configuration=${{ github.event.inputs.configuration || 'Release' }}
+          /p:Platform="${{ github.event.inputs.platform || 'Win32' }}"
+
+      - name: Upload GameServer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GameServer-${{ github.sha }}-${{ github.event.inputs.configuration || 'Release' }}-${{ github.event.inputs.platform || 'Win32' }}
+          path: |
+            GameServer/GameServer/${{ github.event.inputs.configuration || 'Release' }}/GameServer.exe
+            GameServer/GameServer/${{ github.event.inputs.configuration || 'Release' }}/*.dll
+            GameServer/GameServer/${{ github.event.inputs.configuration || 'Release' }}/*.pdb
+          if-no-files-found: error

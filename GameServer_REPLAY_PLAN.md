@@ -86,3 +86,9 @@ git bisect run ./scripts/test_gameserver.sh
 6. После исправления — повторный прогон smoke/regression.
 
 Такой подход даёт воспроизводимость и чёткий момент, где именно возникла регрессия.
+
+## 6) Сборка `.exe` в GitHub и скачивание артефактов
+
+Если удобнее проверять готовый бинарник после каждого шага, используй CI-пайплайн
+из `.github/workflows/gameserver-build.yml` (подробный сценарий в
+`GameServer_CI_DOWNLOAD_FLOW.md`).
