@@ -1,34 +1,39 @@
-# GameServer CI build + download flow
+# GameServer CI build + download flow (без оплаты GitHub-hosted)
 
-Если GitHub пишет про оплату, значит workflow пытается стартовать на
-`github-hosted` раннере (`windows-latest`) и закончились/недоступны минуты.
+Ошибка вида:
+`The job was not started because recent account payments have failed...`
+означает, что запуск на GitHub-hosted runner заблокирован биллингом.
 
-Ниже настройка без оплаты: **через self-hosted Windows runner**.
+Чтобы это исключить, workflow переведён **только на self-hosted Windows runner**.
 
-## Что изменено в workflow
+## Что теперь в репозитории
 
-- `.github/workflows/gameserver-build.yml` теперь запускается **только вручную** (`workflow_dispatch`)
-- добавлен выбор `runner_type`:
-  - `self-hosted` (по умолчанию, без GitHub-hosted billing)
-  - `github-hosted` (если у тебя есть оплаченные минуты)
+- `.github/workflows/gameserver-build.yml` запускается вручную (`workflow_dispatch`)
+- job работает только на:
+  - `runs-on: [self-hosted, windows]`
 
-## Как запустить без оплаты (рекомендуется)
+То есть платные `windows-latest` GitHub-hosted раннеры больше не используются.
 
-1. На своей Windows-машине открой репозиторий -> **Settings -> Actions -> Runners**.
-2. Добавь новый self-hosted runner (OS: Windows) и запусти его как сервис.
-3. Убедись, что на машине есть Visual Studio Build Tools + NuGet/MSBuild.
-4. В Actions запусти `GameServer Build Artifact`:
-   - `runner_type = self-hosted`
-   - `configuration = Release`
-   - `platform = Win32` (или `x64`)
-5. После успешной сборки скачай артефакт `GameServer-...`.
+## Как запустить сборку
 
-## Проверка по шагам replay
+1. На твоём Windows сервере/ПК в репозитории открой:
+   **Settings -> Actions -> Runners -> New self-hosted runner**.
+2. Выбери `Windows`, установи runner и запусти его как сервис.
+3. Убедись, что установлены:
+   - Visual Studio Build Tools (MSBuild)
+   - NuGet
+4. Открой **Actions -> GameServer Build Artifact (Self-Hosted) -> Run workflow**.
+5. Выбери:
+   - `configuration = Release` (или Debug)
+   - `platform = Win32` (или x64)
+6. После completion скачай артефакт `GameServer-...`.
 
-- делаешь следующий replay-коммит по `GameServer`
-- запускаешь workflow на `self-hosted`
-- скачиваешь exe и проверяешь
-- отмечаешь good/bad
-- переходишь к следующему коммиту
+## Для твоего replay-сценария
 
-Так ты находишь проблемный коммит без ограничений платных GitHub-hosted минут.
+На каждый replay-коммит:
+1) push коммита
+2) ручной запуск workflow
+3) скачивание `exe`
+4) проверка good/bad
+
+Так можно локализовать плохой коммит без упора в Billing & plans GitHub-hosted.

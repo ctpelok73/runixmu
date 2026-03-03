@@ -1,16 +1,8 @@
-name: GameServer Build Artifact
+name: GameServer Build Artifact (Self-Hosted)
 
 on:
   workflow_dispatch:
     inputs:
-      runner_type:
-        description: Where to run build (self-hosted avoids GitHub-hosted billing minutes)
-        required: true
-        default: self-hosted
-        type: choice
-        options:
-          - self-hosted
-          - github-hosted
       configuration:
         description: Build configuration
         required: true
@@ -29,52 +21,10 @@ on:
           - x64
 
 jobs:
-  build-gameserver-self-hosted:
-    if: ${{ github.event.inputs.runner_type == 'self-hosted' }}
+  build-gameserver:
     runs-on:
       - self-hosted
       - windows
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
-
-      - name: Restore NuGet
-        run: nuget restore GameServer/GameServer.sln
-
-      - name: Resolve output directory
-        shell: pwsh
-        run: |
-          if ('${{ github.event.inputs.platform }}' -eq 'x64') {
-            "BUILD_OUTPUT=GameServer/GameServer/x64/${{ github.event.inputs.configuration }}" | Out-File -FilePath $env:GITHUB_ENV -Append
-          }
-          else {
-            "BUILD_OUTPUT=GameServer/GameServer/${{ github.event.inputs.configuration }}" | Out-File -FilePath $env:GITHUB_ENV -Append
-          }
-
-      - name: Build GameServer
-        run: >
-          msbuild GameServer/GameServer.sln
-          /m
-          /p:Configuration=${{ github.event.inputs.configuration }}
-          /p:Platform="${{ github.event.inputs.platform }}"
-
-      - name: Upload GameServer artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: GameServer-${{ github.sha }}-${{ github.event.inputs.configuration }}-${{ github.event.inputs.platform }}
-          path: |
-            ${{ env.BUILD_OUTPUT }}/GameServer.exe
-            ${{ env.BUILD_OUTPUT }}/*.dll
-            ${{ env.BUILD_OUTPUT }}/*.pdb
-          if-no-files-found: error
-
-  build-gameserver-github-hosted:
-    if: ${{ github.event.inputs.runner_type == 'github-hosted' }}
-    runs-on: windows-latest
 
     steps:
       - name: Checkout
