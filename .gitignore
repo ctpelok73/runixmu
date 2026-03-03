@@ -32,7 +32,6 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
-/[Tt]ools
 
 # Visual Studio 2015/2017/2019/2022 cache/options directory
 .vs/
@@ -218,4 +217,6 @@ _pkginfo.txt
 *.ipch
 *.db
 *.opendb
-UpdaterService/UpdaterManager.exe
+
+# Local baseline snapshot folder
+GameServe_ORIG/
