@@ -1,30 +1,34 @@
 # GameServer CI build + download flow
 
-Да, это можно автоматизировать: репозиторий сам собирает `GameServer.exe`,
-а ты просто скачиваешь артефакт из GitHub Actions и проверяешь.
+Если GitHub пишет про оплату, значит workflow пытается стартовать на
+`github-hosted` раннере (`windows-latest`) и закончились/недоступны минуты.
 
-## Что уже добавлено
+Ниже настройка без оплаты: **через self-hosted Windows runner**.
 
-- workflow: `.github/workflows/gameserver-build.yml`
-- триггеры:
-  - `push` в ветки `work` и `gameserver-replay*` (если изменился `GameServer/**`)
-  - ручной запуск `workflow_dispatch` с выбором `Configuration`/`Platform`
+## Что изменено в workflow
 
-## Как использовать по шагам
+- `.github/workflows/gameserver-build.yml` теперь запускается **только вручную** (`workflow_dispatch`)
+- добавлен выбор `runner_type`:
+  - `self-hosted` (по умолчанию, без GitHub-hosted billing)
+  - `github-hosted` (если у тебя есть оплаченные минуты)
 
-1. Запускаешь replay-перенос (или руками делаешь следующий commit только для GameServer).
-2. Пушишь ветку в GitHub (например `gameserver-replay-run`).
-3. Ждёшь, пока workflow `GameServer Build Artifact` завершится.
-4. Открываешь run -> `Artifacts` -> скачиваешь архив `GameServer-...`.
-5. Проверяешь exe локально.
-6. Если всё ок — идёшь к следующему commit.
+## Как запустить без оплаты (рекомендуется)
 
-## Рекомендуемый цикл под твою задачу
+1. На своей Windows-машине открой репозиторий -> **Settings -> Actions -> Runners**.
+2. Добавь новый self-hosted runner (OS: Windows) и запусти его как сервис.
+3. Убедись, что на машине есть Visual Studio Build Tools + NuGet/MSBuild.
+4. В Actions запусти `GameServer Build Artifact`:
+   - `runner_type = self-hosted`
+   - `configuration = Release`
+   - `platform = Win32` (или `x64`)
+5. После успешной сборки скачай артефакт `GameServer-...`.
 
-- на каждый replay-commit:
-  1) push
-  2) скачать артефакт
-  3) проверить
-  4) отметить good/bad
+## Проверка по шагам replay
 
-Так ты получишь точный commit, где возникает поломка, без ручной локальной сборки каждый раз.
+- делаешь следующий replay-коммит по `GameServer`
+- запускаешь workflow на `self-hosted`
+- скачиваешь exe и проверяешь
+- отмечаешь good/bad
+- переходишь к следующему коммиту
+
+Так ты находишь проблемный коммит без ограничений платных GitHub-hosted минут.

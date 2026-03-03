@@ -90,5 +90,6 @@ git bisect run ./scripts/test_gameserver.sh
 ## 6) Сборка `.exe` в GitHub и скачивание артефактов
 
 Если удобнее проверять готовый бинарник после каждого шага, используй CI-пайплайн
-из `.github/workflows/gameserver-build.yml` (подробный сценарий в
-`GameServer_CI_DOWNLOAD_FLOW.md`).
+из `.github/workflows/gameserver-build.yml` в ручном режиме (`workflow_dispatch`).
+Для случая с ограничениями по оплате GitHub-hosted минут используй `runner_type=self-hosted`
+(подробный сценарий в `GameServer_CI_DOWNLOAD_FLOW.md`).
