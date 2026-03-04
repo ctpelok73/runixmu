@@ -103,6 +103,21 @@ bool CMessage::LoadFromXml(const char* path)
 
 		if (index < 0)
 		{
+			index = node.attribute("ID").as_int(-1);
+		}
+
+		if (index < 0)
+		{
+			index = node.attribute("Id").as_int(-1);
+		}
+
+		if (index < 0)
+		{
+			index = node.attribute("id").as_int(-1);
+		}
+
+		if (index < 0)
+		{
 			continue;
 		}
 
