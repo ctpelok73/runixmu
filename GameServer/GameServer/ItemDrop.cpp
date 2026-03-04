@@ -31,6 +31,76 @@ CItemDrop::~CItemDrop() // OK
 
 void CItemDrop::Load(char* path) // OK
 {
+	char xmlPath[MAX_PATH] = { 0 };
+	const char* sourcePath = path;
+	bool loadXml = false;
+	const char* ext = strrchr(path, '.');
+
+	if (ext != 0 && _stricmp(ext, ".xml") == 0)
+	{
+		loadXml = true;
+	}
+	else if (ext != 0 && _stricmp(ext, ".txt") == 0)
+	{
+		strcpy_s(xmlPath, path);
+		char* xmlExt = strrchr(xmlPath, '.');
+
+		if (xmlExt != 0)
+		{
+			strcpy_s(xmlExt, 5, ".xml");
+			FILE* file = 0;
+
+			if (fopen_s(&file, xmlPath, "r") == 0 && file != 0)
+			{
+				fclose(file);
+				sourcePath = xmlPath;
+				loadXml = true;
+			}
+		}
+	}
+
+	if (loadXml != 0)
+	{
+		pugi::xml_document file;
+		pugi::xml_parse_result res = file.load_file(sourcePath);
+
+		if (res.status != pugi::status_ok)
+		{
+			ErrorMessageBox("Error load fail: %s", sourcePath);
+			return;
+		}
+
+		this->m_ItemDropInfo.clear();
+
+		pugi::xml_node root = file.child("ItemDrop");
+
+		for (pugi::xml_node leaf = root.child("Info"); leaf; leaf = leaf.next_sibling("Info"))
+		{
+			ITEM_DROP_INFO info;
+
+			info.Index = leaf.attribute("Index").as_int();
+			info.Level = leaf.attribute("Level").as_int();
+			info.Grade = leaf.attribute("Grade").as_int();
+			info.Option0 = leaf.attribute("Option0").as_int();
+			info.Option1 = leaf.attribute("Option1").as_int();
+			info.Option2 = leaf.attribute("Option2").as_int();
+			info.Option3 = leaf.attribute("Option3").as_int();
+			info.Option4 = leaf.attribute("Option4").as_int();
+			info.Option5 = leaf.attribute("Option5").as_int();
+			info.Option6 = leaf.attribute("Option6").as_int();
+			info.Duration = leaf.attribute("Duration").as_int();
+			info.MapNumber = leaf.attribute("MapNumber").as_int();
+			info.MonsterClass = leaf.attribute("MonsterClass").as_int();
+			info.MonsterLevelMin = leaf.attribute("MonsterLevelMin").as_int();
+			info.MonsterLevelMax = leaf.attribute("MonsterLevelMax").as_int();
+			info.DropRate = leaf.attribute("DropRate").as_int();
+
+			this->m_ItemDropInfo.push_back(info);
+		}
+
+		return;
+	}
+
 	CMemScript* lpMemScript = new CMemScript;
 
 	if(lpMemScript == 0)

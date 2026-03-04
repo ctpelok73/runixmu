@@ -42,6 +42,70 @@ CMove::~CMove() // OK
 
 void CMove::Load(char* path) // OK
 {
+	char xmlPath[MAX_PATH] = { 0 };
+	const char* sourcePath = path;
+	bool loadXml = false;
+	const char* ext = strrchr(path, '.');
+
+	if (ext != 0 && _stricmp(ext, ".xml") == 0)
+	{
+		loadXml = true;
+	}
+	else if (ext != 0 && _stricmp(ext, ".txt") == 0)
+	{
+		strcpy_s(xmlPath, path);
+		char* xmlExt = strrchr(xmlPath, '.');
+
+		if (xmlExt != 0)
+		{
+			strcpy_s(xmlExt, 5, ".xml");
+			FILE* file = 0;
+
+			if (fopen_s(&file, xmlPath, "r") == 0 && file != 0)
+			{
+				fclose(file);
+				sourcePath = xmlPath;
+				loadXml = true;
+			}
+		}
+	}
+
+	if (loadXml != 0)
+	{
+		pugi::xml_document file;
+		pugi::xml_parse_result res = file.load_file(sourcePath);
+
+		if (res.status != pugi::status_ok)
+		{
+			ErrorMessageBox("Error load fail: %s", sourcePath);
+			return;
+		}
+
+		this->m_MoveInfo.clear();
+
+		pugi::xml_node root = file.child("MoveMap");
+
+		for (pugi::xml_node leaf = root.child("info"); leaf; leaf = leaf.next_sibling("info"))
+		{
+			MOVE_INFO info;
+
+			info.Index = leaf.attribute("Index").as_int();
+			strcpy_s(info.Name, leaf.attribute("MainName").as_string());
+			strcpy_s(info.SubName, leaf.attribute("SubName").as_string());
+			info.Money = leaf.attribute("Money").as_int();
+			info.MinLevel = leaf.attribute("MinLevel").as_int();
+			info.MaxLevel = leaf.attribute("MaxLevel").as_int();
+			info.MinReset = leaf.attribute("MinReset").as_int();
+			info.MaxReset = leaf.attribute("MaxReset").as_int();
+			info.AccountLevel = leaf.attribute("AccountLevel").as_int();
+			info.Gate = leaf.attribute("Gate").as_int();
+
+			this->m_MoveInfo.insert(type_map_move::value_type(info.Index, info));
+		}
+
+		return;
+	}
+
 	CMemScript* lpMemScript = new CMemScript;
 
 	if (lpMemScript == 0)
