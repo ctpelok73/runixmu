@@ -300,7 +300,9 @@ void CServerInfo::ReadCommonInfo() // OK
 
 	gMapServerManager.Load(gPath.GetFullPath("MapServerInfo.dat"));
 
-	gMessage.Load(gPath.GetFullPath("Message.txt"));
+	char messageLanguage[32] = { 0 };
+	GetPrivateProfileString("GameServerInfo", "MessageLanguage", "", messageLanguage, sizeof(messageLanguage), ".\\Data\\GameServerInfo - Common.dat");
+	gMessage.Load(gPath.GetFullPath("Message.txt"), messageLanguage);
 
 #if(GAMESERVER_UPDATE>=802)
 

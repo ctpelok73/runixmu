@@ -15,9 +15,11 @@ class CMessage
 public:
 	CMessage();
 	virtual ~CMessage();
-	void Load(char* path);
+	void Load(char* path, const char* language);
 	char* GlobalText(int index);
 private:
+	bool LoadFromTxt(const char* path);
+	bool LoadFromXml(const char* path);
 	char m_DefaultMessage[128];
 	std::map<int,MESSAGE_INFO> m_MessageInfo;
 };
