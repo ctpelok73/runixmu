@@ -224,3 +224,9 @@ GameServe_ORIG/
 # Local helper folders
 Util/
 scripts/
+
+# Local planning/rules files
+/.trae/rules/rule2.md
+/.trae/rules/rules.md
+/GameServer/GUI_XML_EDITOR_PLAN.md
+/GameServer/Data/

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="MoveMap">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="info" maxOccurs="unbounded" minOccurs="0">
+          <xs:complexType>
+            <xs:attribute name="Index" type="xs:int" use="required"/>
+            <xs:attribute name="MainName" type="xs:string" use="required"/>
+            <xs:attribute name="SubName" type="xs:string" use="required"/>
+            <xs:attribute name="Money" type="xs:int" use="required"/>
+            <xs:attribute name="MinLevel" type="xs:int" use="required"/>
+            <xs:attribute name="MaxLevel" type="xs:int" use="required"/>
+            <xs:attribute name="MinReset" type="xs:int" use="required"/>
+            <xs:attribute name="MaxReset" type="xs:int" use="required"/>
+            <xs:attribute name="AccountLevel" type="xs:int" use="required"/>
+            <xs:attribute name="Gate" type="xs:int" use="required"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

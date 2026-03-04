@@ -25,6 +25,65 @@ CItemMove::~CItemMove() // OK
 
 void CItemMove::Load(char* path) // OK
 {
+	char xmlPath[MAX_PATH] = { 0 };
+	const char* sourcePath = path;
+	bool loadXml = false;
+	const char* ext = strrchr(path, '.');
+
+	if (ext != 0 && _stricmp(ext, ".xml") == 0)
+	{
+		loadXml = true;
+	}
+	else if (ext != 0 && _stricmp(ext, ".txt") == 0)
+	{
+		strcpy_s(xmlPath, path);
+		char* xmlExt = strrchr(xmlPath, '.');
+
+		if (xmlExt != 0)
+		{
+			strcpy_s(xmlExt, 5, ".xml");
+			FILE* file = 0;
+
+			if (fopen_s(&file, xmlPath, "r") == 0 && file != 0)
+			{
+				fclose(file);
+				sourcePath = xmlPath;
+				loadXml = true;
+			}
+		}
+	}
+
+	if (loadXml != 0)
+	{
+		pugi::xml_document file;
+		pugi::xml_parse_result res = file.load_file(sourcePath);
+
+		if (res.status != pugi::status_ok)
+		{
+			ErrorMessageBox("Error load fail: %s", sourcePath);
+			return;
+		}
+
+		this->m_ItemMoveInfo.clear();
+
+		pugi::xml_node root = file.child("ItemMove");
+
+		for (pugi::xml_node leaf = root.child("Info"); leaf; leaf = leaf.next_sibling("Info"))
+		{
+			ITEM_MOVE_INFO info;
+
+			info.Index = leaf.attribute("Index").as_int();
+			info.AllowDrop = leaf.attribute("AllowDrop").as_int(leaf.attribute("BanDrop").as_int(1));
+			info.AllowSell = leaf.attribute("AllowSell").as_int(leaf.attribute("BanSell").as_int(1));
+			info.AllowTrade = leaf.attribute("AllowTrade").as_int(leaf.attribute("BanTrade").as_int(1));
+			info.AllowVault = leaf.attribute("AllowVault").as_int(leaf.attribute("BanVaul").as_int(leaf.attribute("BanVault").as_int(1)));
+
+			this->m_ItemMoveInfo.insert(type_move_item::value_type(info.Index,info));
+		}
+
+		return;
+	}
+
 	CMemScript* lpMemScript = new CMemScript;
 
 	if(lpMemScript == 0)

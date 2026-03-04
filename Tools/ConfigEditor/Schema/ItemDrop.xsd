@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="ItemDrop">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Info" maxOccurs="unbounded" minOccurs="0">
+          <xs:complexType>
+            <xs:attribute name="Index" type="xs:int" use="required"/>
+            <xs:attribute name="Level" type="xs:int" use="required"/>
+            <xs:attribute name="Grade" type="xs:int" use="required"/>
+            <xs:attribute name="Option0" type="xs:int" use="required"/>
+            <xs:attribute name="Option1" type="xs:int" use="required"/>
+            <xs:attribute name="Option2" type="xs:int" use="required"/>
+            <xs:attribute name="Option3" type="xs:int" use="required"/>
+            <xs:attribute name="Option4" type="xs:int" use="required"/>
+            <xs:attribute name="Option5" type="xs:int" use="required"/>
+            <xs:attribute name="Option6" type="xs:int" use="required"/>
+            <xs:attribute name="Duration" type="xs:int" use="required"/>
+            <xs:attribute name="MapNumber" type="xs:int" use="required"/>
+            <xs:attribute name="MonsterClass" type="xs:int" use="required"/>
+            <xs:attribute name="MonsterLevelMin" type="xs:int" use="required"/>
+            <xs:attribute name="MonsterLevelMax" type="xs:int" use="required"/>
+            <xs:attribute name="DropRate" type="xs:int" use="required"/>
+            <xs:attribute name="Comment" type="xs:string" use="optional"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

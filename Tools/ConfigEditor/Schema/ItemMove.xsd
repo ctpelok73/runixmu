@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="ItemMove">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Info" maxOccurs="unbounded" minOccurs="0">
+          <xs:complexType>
+            <xs:attribute name="Index" type="xs:int" use="required"/>
+            <xs:attribute name="BanDrop" type="xs:int" use="optional"/>
+            <xs:attribute name="BanSell" type="xs:int" use="optional"/>
+            <xs:attribute name="BanTrade" type="xs:int" use="optional"/>
+            <xs:attribute name="BanVaul" type="xs:int" use="optional"/>
+            <xs:attribute name="BanVault" type="xs:int" use="optional"/>
+            <xs:attribute name="AllowDrop" type="xs:int" use="optional"/>
+            <xs:attribute name="AllowSell" type="xs:int" use="optional"/>
+            <xs:attribute name="AllowTrade" type="xs:int" use="optional"/>
+            <xs:attribute name="AllowVault" type="xs:int" use="optional"/>
+            <xs:attribute name="Comment" type="xs:string" use="optional"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
