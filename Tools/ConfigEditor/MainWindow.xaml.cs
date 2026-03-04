@@ -6,18 +6,44 @@ using System.Xml.Linq;
 using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 
 namespace ConfigEditor;
 
 public partial class MainWindow : Window
 {
+    private const string TextValueColumn = "_TextValue";
     private string _dataRoot;
     private readonly ObservableCollection<PropertyItem> _inspectorItems = new();
     private readonly Dictionary<string, string> _fileGuides = new(StringComparer.OrdinalIgnoreCase)
     {
         ["move.xml"] = "Move.xml: каждая строка это точка телепорта. Редактируйте Index, Gate, уровни и reset-ограничения. После правки жмите Validate, затем Backup и Save.",
         ["itemmove.xml"] = "ItemMove.xml: это флаги запретов/разрешений. 1 = разрешено, 0 = запрещено. Поддерживаются поля BanDrop/BanSell/BanTrade/BanVaul и AllowDrop/AllowSell/AllowTrade/AllowVault.",
-        ["itemdrop.xml"] = "ItemDrop.xml: это правила дропа. Важно сохранять корректные диапазоны MonsterLevelMin/MonsterLevelMax и адекватный DropRate."
+        ["itemdrop.xml"] = "ItemDrop.xml: это правила дропа. Важно сохранять корректные диапазоны MonsterLevelMin/MonsterLevelMax и адекватный DropRate.",
+        ["item.xml"] = "Item.xml: основной справочник предметов. Используется сервером напрямую, правки только осознанно.",
+        ["eventname.xml"] = "EventName.xml: названия и строки событий для серверных уведомлений.",
+        ["mixexpansion.xml"] = "MixExpansion.xml: конфиг расширенного микса GoblinMixExpansion.",
+        ["petitemoption.xml"] = "PetItemOption.xml: параметры pet-опций предметов.",
+        ["flagitemoption.xml"] = "FlagItemOption.xml: параметры flag-опций предметов.",
+        ["earringitemoption.xml"] = "EarringItemOption.xml: параметры earring-опций предметов.",
+        ["mucastledata.xml"] = "MuCastleData.xml: данные CastleSiege, грузится через CCastleSiege::LoadData.",
+        ["custombuyvip.xml"] = "CustomBuyVip.xml: конфиг покупки VIP, грузится через CCustomBuyVip::LoadData.",
+        ["message.xml"] = "Message.xml: системные тексты сервера (ищется в Data\\Lang и Data)."
+    };
+    private readonly HashSet<string> _serverUsedXmlFileNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Move.xml",
+        "ItemDrop.xml",
+        "ItemMove.xml",
+        "Item.xml",
+        "PetItemOption.xml",
+        "FlagItemOption.xml",
+        "EarringItemOption.xml",
+        "EventName.xml",
+        "MixExpansion.xml",
+        "MuCastleData.xml",
+        "CustomBuyVip.xml",
+        "Message.xml"
     };
     private readonly Dictionary<string, Dictionary<string, string>> _fieldGuides = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -72,6 +98,162 @@ public partial class MainWindow : Window
     private readonly List<XElement> _recordElements = new();
     private readonly List<int> _gateIndexList = new();
     private readonly HashSet<int> _gateIndexSet = new();
+    private readonly List<int> _mapIndexList = new();
+    private readonly HashSet<int> _mapIndexSet = new();
+    private readonly Dictionary<int, string> _mapNameByIndex = new();
+    private readonly List<int> _itemIndexList = new();
+    private readonly HashSet<int> _itemIndexSet = new();
+    private readonly Dictionary<int, string> _itemNameByIndex = new();
+    private readonly string[] _itemClassFields =
+    {
+        "DarkWizard",
+        "DarkKnight",
+        "FairyElf",
+        "MagicGladiator",
+        "DarkLord",
+        "Summoner",
+        "RageFighter",
+        "WhiteWizard",
+        "LemuriaMage",
+        "IllusionKnight"
+    };
+    private readonly List<PresetOption> _itemClassPresets = new()
+    {
+        new("Классы: Только DK", new Dictionary<string, string>
+        {
+            ["DarkWizard"] = "0",
+            ["DarkKnight"] = "1",
+            ["FairyElf"] = "0",
+            ["MagicGladiator"] = "0",
+            ["DarkLord"] = "0",
+            ["Summoner"] = "0",
+            ["RageFighter"] = "0",
+            ["WhiteWizard"] = "0",
+            ["LemuriaMage"] = "0",
+            ["IllusionKnight"] = "0"
+        }),
+        new("Классы: Только DW", new Dictionary<string, string>
+        {
+            ["DarkWizard"] = "1",
+            ["DarkKnight"] = "0",
+            ["FairyElf"] = "0",
+            ["MagicGladiator"] = "0",
+            ["DarkLord"] = "0",
+            ["Summoner"] = "0",
+            ["RageFighter"] = "0",
+            ["WhiteWizard"] = "1",
+            ["LemuriaMage"] = "1",
+            ["IllusionKnight"] = "0"
+        }),
+        new("Классы: DK + DW + ELF", new Dictionary<string, string>
+        {
+            ["DarkWizard"] = "1",
+            ["DarkKnight"] = "1",
+            ["FairyElf"] = "1",
+            ["MagicGladiator"] = "0",
+            ["DarkLord"] = "0",
+            ["Summoner"] = "0",
+            ["RageFighter"] = "0",
+            ["WhiteWizard"] = "1",
+            ["LemuriaMage"] = "1",
+            ["IllusionKnight"] = "0"
+        }),
+        new("Классы: Все S6 базовые", new Dictionary<string, string>
+        {
+            ["DarkWizard"] = "1",
+            ["DarkKnight"] = "1",
+            ["FairyElf"] = "1",
+            ["MagicGladiator"] = "1",
+            ["DarkLord"] = "1",
+            ["Summoner"] = "1",
+            ["RageFighter"] = "1",
+            ["WhiteWizard"] = "1",
+            ["LemuriaMage"] = "1",
+            ["IllusionKnight"] = "1"
+        }),
+        new("Классы: Сброс", new Dictionary<string, string>
+        {
+            ["DarkWizard"] = "0",
+            ["DarkKnight"] = "0",
+            ["FairyElf"] = "0",
+            ["MagicGladiator"] = "0",
+            ["DarkLord"] = "0",
+            ["Summoner"] = "0",
+            ["RageFighter"] = "0",
+            ["WhiteWizard"] = "0",
+            ["LemuriaMage"] = "0",
+            ["IllusionKnight"] = "0"
+        })
+    };
+    private readonly Dictionary<string, List<PresetOption>> _presetsByFile = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Move.xml"] = new List<PresetOption>
+        {
+            new("Move: Свободный доступ", new Dictionary<string, string>
+            {
+                ["Money"] = "0",
+                ["MinLevel"] = "-1",
+                ["MaxLevel"] = "-1",
+                ["MinReset"] = "-1",
+                ["MaxReset"] = "-1",
+                ["AccountLevel"] = "0"
+            }),
+            new("Move: Платный телепорт", new Dictionary<string, string>
+            {
+                ["Money"] = "10000",
+                ["MinLevel"] = "50",
+                ["MaxLevel"] = "-1",
+                ["MinReset"] = "-1",
+                ["MaxReset"] = "-1",
+                ["AccountLevel"] = "0"
+            })
+        },
+        ["ItemMove.xml"] = new List<PresetOption>
+        {
+            new("ItemMove: Полный запрет перемещения", new Dictionary<string, string>
+            {
+                ["BanDrop"] = "0",
+                ["BanSell"] = "0",
+                ["BanTrade"] = "0",
+                ["BanVaul"] = "0",
+                ["BanVault"] = "0",
+                ["AllowDrop"] = "0",
+                ["AllowSell"] = "0",
+                ["AllowTrade"] = "0",
+                ["AllowVault"] = "0"
+            }),
+            new("ItemMove: Полное разрешение", new Dictionary<string, string>
+            {
+                ["BanDrop"] = "1",
+                ["BanSell"] = "1",
+                ["BanTrade"] = "1",
+                ["BanVaul"] = "1",
+                ["BanVault"] = "1",
+                ["AllowDrop"] = "1",
+                ["AllowSell"] = "1",
+                ["AllowTrade"] = "1",
+                ["AllowVault"] = "1"
+            })
+        },
+        ["ItemDrop.xml"] = new List<PresetOption>
+        {
+            new("ItemDrop: Глобальный дроп", new Dictionary<string, string>
+            {
+                ["MapNumber"] = "-1",
+                ["MonsterClass"] = "-1",
+                ["MonsterLevelMin"] = "-1",
+                ["MonsterLevelMax"] = "-1"
+            }),
+            new("ItemDrop: Средний шанс", new Dictionary<string, string>
+            {
+                ["DropRate"] = "1000"
+            }),
+            new("ItemDrop: Высокий шанс", new Dictionary<string, string>
+            {
+                ["DropRate"] = "5000"
+            })
+        }
+    };
     private XDocument? _currentDocument;
     private string? _currentFilePath;
 
@@ -129,7 +311,11 @@ public partial class MainWindow : Window
 
         foreach (var file in directory.GetFiles("*.xml").OrderBy(file => file.Name))
         {
-            var fileNode = new TreeViewItem { Header = file.Name, Tag = file.FullName };
+            var fileNode = new TreeViewItem
+            {
+                Header = IsServerUsedXml(file.Name) ? $"★ {file.Name}" : file.Name,
+                Tag = file.FullName
+            };
             node.Items.Add(fileNode);
         }
 
@@ -170,8 +356,10 @@ public partial class MainWindow : Window
             {
                 RecordsGrid.SelectedIndex = 0;
             }
+            RefreshPresetList();
             GuideText.Text = GetFileGuide(filePath);
-            StatusText.Text = $"Loaded: {records.Count} records, {_recordsTable.Columns.Count} fields";
+            var usedState = IsServerUsedXml(Path.GetFileName(filePath)) ? "Server-used XML" : "Local XML";
+            StatusText.Text = $"Loaded: {records.Count} records, {_recordsTable.Columns.Count} fields ({usedState})";
         }
         catch (Exception ex)
         {
@@ -211,13 +399,27 @@ public partial class MainWindow : Window
             _recordsTable.Columns.Add(name, typeof(string));
         }
 
+        var hasTextValue = records.Any(element => element.HasElements == false && string.IsNullOrWhiteSpace(element.Value) == false);
+
+        if (hasTextValue)
+        {
+            _recordsTable.Columns.Add(TextValueColumn, typeof(string));
+        }
+
         foreach (var element in records)
         {
             var row = _recordsTable.NewRow();
 
             foreach (DataColumn column in _recordsTable.Columns)
             {
-                row[column.ColumnName] = element.Attribute(column.ColumnName)?.Value ?? string.Empty;
+                if (column.ColumnName == TextValueColumn)
+                {
+                    row[column.ColumnName] = element.Value;
+                }
+                else
+                {
+                    row[column.ColumnName] = element.Attribute(column.ColumnName)?.Value ?? string.Empty;
+                }
             }
 
             _recordsTable.Rows.Add(row);
@@ -243,6 +445,12 @@ public partial class MainWindow : Window
             if (column.ColumnName.Equals("Index", StringComparison.OrdinalIgnoreCase))
             {
                 gridColumn.Width = new DataGridLength(90);
+            }
+
+            if (column.ColumnName == TextValueColumn)
+            {
+                gridColumn.Width = new DataGridLength(260);
+                gridColumn.Header = "Text";
             }
 
             RecordsGrid.Columns.Add(gridColumn);
@@ -289,6 +497,36 @@ public partial class MainWindow : Window
         LoadDependencyData();
         LoadXmlFile(dialog.FileName);
         StatusText.Text = $"Opened: {dialog.FileName}";
+    }
+
+    private void ApplyPresetClick(object sender, RoutedEventArgs e)
+    {
+        if (RecordsGrid.SelectedItem is not DataRowView row)
+        {
+            StatusText.Text = "Выберите запись для применения шаблона";
+            return;
+        }
+
+        if (PresetCombo.SelectedItem is not PresetOption preset)
+        {
+            StatusText.Text = "Выберите шаблон";
+            return;
+        }
+
+        var appliedCount = 0;
+
+        foreach (var pair in preset.Values)
+        {
+            if (_recordsTable.Columns.Contains(pair.Key))
+            {
+                row.Row[pair.Key] = pair.Value;
+                appliedCount++;
+            }
+        }
+
+        RefreshInspectorFromRow(row);
+        BuildInteractiveEditor(row);
+        StatusText.Text = $"Шаблон применен: {preset.Name} ({appliedCount} полей)";
     }
 
     private void ValidateClick(object sender, RoutedEventArgs e)
@@ -353,7 +591,14 @@ public partial class MainWindow : Window
 
             foreach (DataColumn column in _recordsTable.Columns)
             {
-                element.SetAttributeValue(column.ColumnName, row[column.ColumnName]?.ToString() ?? string.Empty);
+                if (column.ColumnName == TextValueColumn)
+                {
+                    element.Value = row[column.ColumnName]?.ToString() ?? string.Empty;
+                }
+                else
+                {
+                    element.SetAttributeValue(column.ColumnName, row[column.ColumnName]?.ToString() ?? string.Empty);
+                }
             }
         }
 
@@ -401,7 +646,7 @@ public partial class MainWindow : Window
             {
                 Name = column.ColumnName,
                 Value = row.Row[column.ColumnName]?.ToString() ?? string.Empty,
-                Description = GetFieldDescription(column.ColumnName)
+                Description = BuildFieldDescription(column.ColumnName, row.Row[column.ColumnName]?.ToString() ?? string.Empty)
             });
         }
     }
@@ -417,8 +662,19 @@ public partial class MainWindow : Window
 
         var fileName = Path.GetFileName(_currentFilePath ?? string.Empty);
 
+        if (fileName.Equals("Item.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            BuildItemClassEditor(row);
+        }
+
         foreach (DataColumn column in _recordsTable.Columns)
         {
+            if (fileName.Equals("Item.xml", StringComparison.OrdinalIgnoreCase) &&
+                _itemClassFields.Contains(column.ColumnName, StringComparer.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             var card = new Border
             {
                 BorderThickness = new Thickness(1),
@@ -472,6 +728,91 @@ public partial class MainWindow : Window
                 };
                 stack.Children.Add(info);
             }
+            else if (fileName.Equals("ItemDrop.xml", StringComparison.OrdinalIgnoreCase) &&
+                     column.ColumnName.Equals("MapNumber", StringComparison.OrdinalIgnoreCase) &&
+                     _mapIndexList.Count > 0)
+            {
+                var combo = new ComboBox
+                {
+                    ItemsSource = _mapIndexList,
+                    IsEditable = true,
+                    Margin = new Thickness(0, 6, 0, 0),
+                    Text = currentValue
+                };
+
+                combo.SelectionChanged += (_, _) =>
+                {
+                    ApplyRowValue(row, column.ColumnName, combo.Text);
+                };
+
+                combo.LostKeyboardFocus += (_, _) =>
+                {
+                    ApplyRowValue(row, column.ColumnName, combo.Text);
+                };
+
+                stack.Children.Add(combo);
+
+                if (int.TryParse(currentValue, out var mapIndex) && _mapNameByIndex.TryGetValue(mapIndex, out var mapName))
+                {
+                    stack.Children.Add(new TextBlock
+                    {
+                        Text = $"Map: {mapName}",
+                        Margin = new Thickness(0, 4, 0, 0),
+                        Foreground = System.Windows.Media.Brushes.DimGray,
+                        FontSize = 11
+                    });
+                }
+            }
+            else if ((fileName.Equals("ItemDrop.xml", StringComparison.OrdinalIgnoreCase) ||
+                      fileName.Equals("ItemMove.xml", StringComparison.OrdinalIgnoreCase)) &&
+                     column.ColumnName.Equals("Index", StringComparison.OrdinalIgnoreCase) &&
+                     _itemIndexList.Count > 0)
+            {
+                var combo = new ComboBox
+                {
+                    ItemsSource = _itemIndexList,
+                    IsEditable = true,
+                    Margin = new Thickness(0, 6, 0, 0),
+                    Text = currentValue
+                };
+
+                combo.SelectionChanged += (_, _) =>
+                {
+                    ApplyRowValue(row, column.ColumnName, combo.Text);
+                };
+
+                combo.LostKeyboardFocus += (_, _) =>
+                {
+                    ApplyRowValue(row, column.ColumnName, combo.Text);
+                };
+
+                stack.Children.Add(combo);
+
+                if (int.TryParse(currentValue, out var itemIndex) && _itemNameByIndex.TryGetValue(itemIndex, out var itemName))
+                {
+                    stack.Children.Add(new TextBlock
+                    {
+                        Text = $"Item: {itemName}",
+                        Margin = new Thickness(0, 4, 0, 0),
+                        Foreground = System.Windows.Media.Brushes.DimGray,
+                        FontSize = 11
+                    });
+                }
+            }
+            else if (IsBinaryField(row, column.ColumnName))
+            {
+                var check = new CheckBox
+                {
+                    IsChecked = row.Row[column.ColumnName]?.ToString() == "1",
+                    Margin = new Thickness(0, 6, 0, 0),
+                    Content = "Включено"
+                };
+
+                check.Checked += (_, _) => ApplyRowValue(row, column.ColumnName, "1");
+                check.Unchecked += (_, _) => ApplyRowValue(row, column.ColumnName, "0");
+
+                stack.Children.Add(check);
+            }
             else
             {
                 var box = new TextBox
@@ -493,6 +834,134 @@ public partial class MainWindow : Window
         }
     }
 
+    private void BuildItemClassEditor(DataRowView row)
+    {
+        var classFields = _itemClassFields
+            .Where(name => _recordsTable.Columns.Contains(name))
+            .ToList();
+
+        if (classFields.Count == 0)
+        {
+            return;
+        }
+
+        var card = new Border
+        {
+            BorderThickness = new Thickness(1),
+            BorderBrush = System.Windows.Media.Brushes.SteelBlue,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10),
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+
+        var root = new StackPanel();
+        root.Children.Add(new TextBlock
+        {
+            Text = "Классы и доступ",
+            FontWeight = FontWeights.Bold
+        });
+
+        var presetPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 8, 0, 8)
+        };
+
+        var presetCombo = new ComboBox
+        {
+            Width = 240,
+            ItemsSource = _itemClassPresets,
+            DisplayMemberPath = "Name",
+            SelectedIndex = 0
+        };
+
+        var presetButton = new Button
+        {
+            Content = "Применить набор",
+            Margin = new Thickness(8, 0, 0, 0)
+        };
+
+        presetButton.Click += (_, _) =>
+        {
+            if (presetCombo.SelectedItem is not PresetOption preset)
+            {
+                return;
+            }
+
+            foreach (var pair in preset.Values)
+            {
+                if (_recordsTable.Columns.Contains(pair.Key))
+                {
+                    row.Row[pair.Key] = pair.Value;
+                }
+            }
+
+            RefreshInspectorFromRow(row);
+            BuildInteractiveEditor(row);
+        };
+
+        presetPanel.Children.Add(presetCombo);
+        presetPanel.Children.Add(presetButton);
+        root.Children.Add(presetPanel);
+
+        var grid = new UniformGrid
+        {
+            Columns = 2
+        };
+
+        foreach (var field in classFields)
+        {
+            var itemPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 4, 8, 4)
+            };
+
+            itemPanel.Children.Add(new TextBlock
+            {
+                Text = field,
+                Width = 120,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            var combo = new ComboBox
+            {
+                Width = 80,
+                ItemsSource = new[] { "0", "1", "2", "3", "4" },
+                SelectedItem = NormalizeClassValue(row.Row[field]?.ToString())
+            };
+
+            combo.SelectionChanged += (_, _) =>
+            {
+                ApplyRowValue(row, field, combo.SelectedItem?.ToString() ?? "0");
+            };
+
+            itemPanel.Children.Add(combo);
+            grid.Children.Add(itemPanel);
+        }
+
+        root.Children.Add(grid);
+        card.Child = root;
+        EditorPanel.Children.Add(card);
+    }
+
+    private static string NormalizeClassValue(string? value)
+    {
+        return value is "1" or "2" or "3" or "4" ? value : "0";
+    }
+
+    private bool IsBinaryField(DataRowView row, string columnName)
+    {
+        if (_itemClassFields.Contains(columnName, StringComparer.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var value = row.Row[columnName]?.ToString();
+
+        return value is "0" or "1";
+    }
+
     private void ApplyRowValue(DataRowView row, string columnName, string? value)
     {
         row.Row[columnName] = value ?? string.Empty;
@@ -503,32 +972,119 @@ public partial class MainWindow : Window
     {
         _gateIndexList.Clear();
         _gateIndexSet.Clear();
+        _mapIndexList.Clear();
+        _mapIndexSet.Clear();
+        _mapNameByIndex.Clear();
+        _itemIndexList.Clear();
+        _itemIndexSet.Clear();
+        _itemNameByIndex.Clear();
 
         var gatePath = Path.Combine(_dataRoot, "Move", "Gate.txt");
 
-        if (File.Exists(gatePath) == false)
+        if (File.Exists(gatePath))
+        {
+            foreach (var line in File.ReadLines(gatePath))
+            {
+                var text = line.Trim();
+
+                if (text.Length == 0 || text.StartsWith("//"))
+                {
+                    continue;
+                }
+
+                var firstToken = text.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+
+                if (int.TryParse(firstToken, out var gateIndex) && _gateIndexSet.Add(gateIndex))
+                {
+                    _gateIndexList.Add(gateIndex);
+                }
+            }
+        }
+
+        var mapManagerPath = Path.Combine(_dataRoot, "MapManager.txt");
+
+        if (File.Exists(mapManagerPath))
+        {
+            foreach (var line in File.ReadLines(mapManagerPath))
+            {
+                var text = line.Trim();
+
+                if (text.Length == 0 || text.StartsWith("//"))
+                {
+                    continue;
+                }
+
+                var tokens = text.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+
+                if (tokens.Length == 0 || int.TryParse(tokens[0], out var mapIndex) == false)
+                {
+                    continue;
+                }
+
+                var mapName = string.Empty;
+                var quoteStart = text.IndexOf('"');
+                var quoteEnd = text.LastIndexOf('"');
+
+                if (quoteStart >= 0 && quoteEnd > quoteStart)
+                {
+                    mapName = text.Substring(quoteStart + 1, quoteEnd - quoteStart - 1);
+                }
+
+                if (_mapIndexSet.Add(mapIndex))
+                {
+                    _mapIndexList.Add(mapIndex);
+                }
+
+                if (string.IsNullOrWhiteSpace(mapName) == false)
+                {
+                    _mapNameByIndex[mapIndex] = mapName;
+                }
+            }
+        }
+
+        LoadItemNameFromXml(Path.Combine(_dataRoot, "Item", "ItemDrop.xml"));
+        LoadItemNameFromXml(Path.Combine(_dataRoot, "Item", "ItemMove.xml"));
+
+        _gateIndexList.Sort();
+        _mapIndexList.Sort();
+        _itemIndexList.Sort();
+    }
+
+    private void LoadItemNameFromXml(string xmlPath)
+    {
+        if (File.Exists(xmlPath) == false)
         {
             return;
         }
 
-        foreach (var line in File.ReadLines(gatePath))
+        try
         {
-            var text = line.Trim();
+            var doc = XDocument.Load(xmlPath);
+            var infoElements = doc.Root?.Elements("Info") ?? Enumerable.Empty<XElement>();
 
-            if (text.Length == 0 || text.StartsWith("//"))
+            foreach (var info in infoElements)
             {
-                continue;
-            }
+                if (TryInt(info, "Index", out var itemIndex) == false)
+                {
+                    continue;
+                }
 
-            var firstToken = text.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                if (_itemIndexSet.Add(itemIndex))
+                {
+                    _itemIndexList.Add(itemIndex);
+                }
 
-            if (int.TryParse(firstToken, out var gateIndex) && _gateIndexSet.Add(gateIndex))
-            {
-                _gateIndexList.Add(gateIndex);
+                var comment = info.Attribute("Comment")?.Value;
+
+                if (string.IsNullOrWhiteSpace(comment) == false && _itemNameByIndex.ContainsKey(itemIndex) == false)
+                {
+                    _itemNameByIndex[itemIndex] = comment;
+                }
             }
         }
-
-        _gateIndexList.Sort();
+        catch
+        {
+        }
     }
 
     private string GetFileGuide(string filePath)
@@ -537,6 +1093,33 @@ public partial class MainWindow : Window
         return _fileGuides.TryGetValue(key, out var guide)
             ? guide
             : "Выберите XML в дереве слева. Далее: Validate -> Backup -> Save.";
+    }
+
+    private bool IsServerUsedXml(string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return false;
+        }
+
+        return _serverUsedXmlFileNames.Contains(fileName);
+    }
+
+    private void RefreshPresetList()
+    {
+        PresetCombo.ItemsSource = null;
+        PresetCombo.SelectedItem = null;
+
+        var fileName = Path.GetFileName(_currentFilePath ?? string.Empty);
+
+        if (_presetsByFile.TryGetValue(fileName, out var presets))
+        {
+            PresetCombo.ItemsSource = presets;
+            if (presets.Count > 0)
+            {
+                PresetCombo.SelectedIndex = 0;
+            }
+        }
     }
 
     private string GetFieldDescription(string fieldName)
@@ -554,6 +1137,45 @@ public partial class MainWindow : Window
         }
 
         return string.Empty;
+    }
+
+    private string BuildFieldDescription(string fieldName, string fieldValue)
+    {
+        var description = GetFieldDescription(fieldName);
+
+        if (string.IsNullOrWhiteSpace(_currentFilePath))
+        {
+            return description;
+        }
+
+        var fileName = Path.GetFileName(_currentFilePath);
+
+        if (fileName.Equals("Move.xml", StringComparison.OrdinalIgnoreCase) &&
+            fieldName.Equals("Gate", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(fieldValue, out var gateValue) &&
+            _gateIndexSet.Contains(gateValue) == false)
+        {
+            description += " [WARN: не найден в Gate.txt]";
+        }
+
+        if (fileName.Equals("ItemDrop.xml", StringComparison.OrdinalIgnoreCase) &&
+            fieldName.Equals("MapNumber", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(fieldValue, out var mapValue) &&
+            _mapNameByIndex.TryGetValue(mapValue, out var mapName))
+        {
+            description += $" [Map: {mapName}]";
+        }
+
+        if ((fileName.Equals("ItemDrop.xml", StringComparison.OrdinalIgnoreCase) ||
+             fileName.Equals("ItemMove.xml", StringComparison.OrdinalIgnoreCase)) &&
+            fieldName.Equals("Index", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(fieldValue, out var itemValue) &&
+            _itemNameByIndex.TryGetValue(itemValue, out var itemName))
+        {
+            description += $" [Item: {itemName}]";
+        }
+
+        return description;
     }
 
     private List<string> ValidateDocument(XDocument document, string fileName)
@@ -596,16 +1218,24 @@ public partial class MainWindow : Window
             return root.Elements("Info").ToList();
         }
 
+        var leafRecords = root
+            .Descendants()
+            .Where(element => element.HasElements == false && (element.HasAttributes || string.IsNullOrWhiteSpace(element.Value) == false))
+            .ToList();
+
+        if (leafRecords.Count > 0)
+        {
+            return leafRecords;
+        }
+
         var direct = root.Elements().ToList();
 
-        if (direct.Count > 0 && direct.Any(element => element.HasAttributes))
+        if (direct.Count > 0)
         {
             return direct;
         }
 
-        var secondLevel = root.Elements().SelectMany(element => element.Elements()).ToList();
-
-        return secondLevel;
+        return new List<XElement>();
     }
 
     private void ValidateMove(XDocument document, List<string> errors)
@@ -758,4 +1388,16 @@ public sealed class PropertyItem
     public string Name { get; set; } = string.Empty;
     public string Value { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+}
+
+public sealed class PresetOption
+{
+    public PresetOption(string name, Dictionary<string, string> values)
+    {
+        Name = name;
+        Values = values;
+    }
+
+    public string Name { get; }
+    public Dictionary<string, string> Values { get; }
 }
