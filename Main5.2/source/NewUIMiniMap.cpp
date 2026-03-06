@@ -26,6 +26,38 @@ extern int TargetY;
 extern BYTE m_OccupationState;
 extern WORD TerrainWall[TERRAIN_SIZE * TERRAIN_SIZE];
 
+namespace
+{
+	void GetMiniMapFullWindow(float& x, float& y, float& w, float& h)
+	{
+		const float screenW = GetWindowsX * g_fScreenRate_x;
+		const float screenH = GetWindowsY * g_fScreenRate_y;
+		const float marginX = 20.f * g_fScreenRate_x;
+		const float marginY = 20.f * g_fScreenRate_y;
+		const float desiredW = 900.f * g_fScreenRate_x;
+		const float desiredH = 620.f * g_fScreenRate_y;
+
+		w = min(desiredW, screenW - (marginX * 2.f));
+		h = min(desiredH, screenH - (marginY * 2.f));
+
+		x = (screenW - w) * 0.5f;
+		y = (screenH - h) * 0.5f;
+	}
+
+	void GetMiniMapFullMapRect(float frameX, float frameY, float frameW, float frameH, float& mapX, float& mapY, float& mapSize)
+	{
+		const float padX = 24.f * g_fScreenRate_x;
+		const float padTop = 50.f * g_fScreenRate_y;
+		const float padBottom = 24.f * g_fScreenRate_y;
+
+		const float areaW = frameW - (padX * 2.f);
+		const float areaH = frameH - padTop - padBottom;
+		mapSize = (areaW < areaH) ? areaW : areaH;
+		mapX = frameX + ((frameW - mapSize) * 0.5f);
+		mapY = frameY + padTop + ((areaH - mapSize) * 0.5f);
+	}
+}
+
 SEASON3B::CNewUIMiniMap::CNewUIMiniMap()
 {
 	m_pNewUIMng = NULL;
@@ -433,10 +465,10 @@ void SEASON3B::CNewUIMiniMap::runtime_move()
 {
 	if (this->IsVisible())
 	{
-		this->m_RenderFrameX = (70.f * g_fScreenRate_x);
-		this->m_RenderFrameY = (70.f * g_fScreenRate_y);
-		this->m_RenderSizeX = (GetWindowsX - 140.f) * g_fScreenRate_x;
-		this->m_RenderSizeY = (GetWindowsY - 166.f) * g_fScreenRate_y;
+		GetMiniMapFullWindow(this->m_RenderFrameX, this->m_RenderFrameY, this->m_RenderSizeX, this->m_RenderSizeY);
+#if MAIN_UPDATE > 303
+		m_BtnExit.ChangeButtonInfo(this->m_RenderFrameX + this->m_RenderSizeX - 34.f, this->m_RenderFrameY + 8.f, 26.f, 26.f);
+#endif
 	}
 	else
 	{
@@ -451,39 +483,50 @@ bool SEASON3B::CNewUIMiniMap::runtime_update_target()
 {
 	if (SEASON3B::CheckMouseIn(this->m_RenderFrameX, this->m_RenderFrameY, this->m_RenderSizeX, this->m_RenderSizeY, false))
 	{
-		if (MouseWheel != 0)
+		if (MouseWheel != 0 && this->IsVisible() == false)
 		{
 			this->Zoom(0.5f * ((MouseWheel < 0) ? -1 : 1));
 			MouseWheel = 0;
 		}
 
 #if MAIN_UPDATE > 303
-		if (SEASON3B::IsRepeat(VK_CONTROL) || this->IsVisible() == false)
+		if (SEASON3B::IsRelease(VK_LBUTTON))
 		{
-			if (SEASON3B::IsRelease(VK_LBUTTON))
+			if (this->IsMoving())
 			{
-				if (this->IsMoving())
+				this->StopMove();
+			}
+			else
+			{
+				int Tx = 0, Ty = 0;
+
+				float mouseTx = MouseRenderX;
+				float mouseTy = MouseRenderY;
+
+				if (this->IsVisible() == false)
 				{
-					this->StopMove();
+					mouseTx -= (this->m_RenderFrameX + (this->m_RenderSizeX * 0.5f));
+					mouseTy -= (this->m_RenderFrameY + (this->m_RenderSizeY * 0.5f));
 				}
-				else
+
+				if (this->runtime_calc_target(mouseTx, mouseTy, &Tx, &Ty))
 				{
-					int Tx = 0, Ty = 0;
-
-					const float mouseTx = MouseRenderX - (this->m_RenderFrameX + (this->m_RenderSizeX * 0.5f));
-					const float mouseTy = MouseRenderY - (this->m_RenderFrameY + (this->m_RenderSizeY * 0.5f));
-
-					if (this->runtime_calc_target(mouseTx, mouseTy, &Tx, &Ty))
+					this->m_MoveX = Tx;
+					this->m_MoveY = Ty;
+					this->m_Map = World;
+					const char* baseText = gTextClien.TextClien_Khac[2];
+					if (baseText == NULL || baseText[0] == 0 || strcmp(baseText, "Null") == 0)
 					{
-						this->m_MoveX = Tx;
-						this->m_MoveY = Ty;
-						this->m_Map = World;
-						this->FindPath(Hero->PositionX, Hero->PositionY, this->m_MoveX, this->m_MoveY);
+						baseText = "Auto-Moving";
 					}
+					char moveText[256];
+					sprintf(moveText, "%s (%d,%d)", baseText, this->m_MoveX, this->m_MoveY);
+					gfxNotice::addLongMovementText(moveText, 20, 150, 2000);
+					this->FindPath(Hero->PositionX, Hero->PositionY, this->m_MoveX, this->m_MoveY);
 				}
 			}
-			return true;
 		}
+		return true;
 #else
 		if (SEASON3B::IsRelease(VK_LBUTTON))
 		{
@@ -495,8 +538,14 @@ bool SEASON3B::CNewUIMiniMap::runtime_update_target()
 			{
 				int Tx = 0, Ty = 0;
 
-				const float mouseTx = MouseRenderX - (this->m_RenderFrameX + (this->m_RenderSizeX * 0.5f));
-				const float mouseTy = MouseRenderY - (this->m_RenderFrameY + (this->m_RenderSizeY * 0.5f));
+				float mouseTx = MouseRenderX;
+				float mouseTy = MouseRenderY;
+
+				if (this->IsVisible() == false)
+				{
+					mouseTx -= (this->m_RenderFrameX + (this->m_RenderSizeX * 0.5f));
+					mouseTy -= (this->m_RenderFrameY + (this->m_RenderSizeY * 0.5f));
+				}
 
 				if (this->runtime_calc_target(mouseTx, mouseTy, &Tx, &Ty))
 				{
@@ -504,7 +553,14 @@ bool SEASON3B::CNewUIMiniMap::runtime_update_target()
 					this->m_MoveY = Ty;
 					this->m_Map = World;
 
-					gfxNotice::addLongMovementText("Auto-Moving", 20, 150, 2000);
+					const char* baseText = gTextClien.TextClien_Khac[2];
+					if (baseText == NULL || baseText[0] == 0 || strcmp(baseText, "Null") == 0)
+					{
+						baseText = "Auto-Moving";
+					}
+					char moveText[256];
+					sprintf(moveText, "%s (%d,%d)", baseText, this->m_MoveX, this->m_MoveY);
+					gfxNotice::addLongMovementText(moveText, 20, 150, 2000);
 					this->FindPath(Hero->PositionX, Hero->PositionY, this->m_MoveX, this->m_MoveY);
 				}
 			}
@@ -524,6 +580,67 @@ void SEASON3B::CNewUIMiniMap::runtime_render_map(bool rendername)
 
 	glEnable(GL_SCISSOR_TEST);
 	glScissor((GLsizei)this->m_RenderFrameX, (GLsizei)(WindowHeight - (this->m_RenderFrameY + this->m_RenderSizeY)), (GLsizei)this->m_RenderSizeX, (GLsizei)this->m_RenderSizeY);
+
+	if (this->IsVisible())
+	{
+		const float border = 2.f * g_fScreenRate_x;
+		const float topBar = 36.f * g_fScreenRate_y;
+
+		glColor4f(0.07f, 0.07f, 0.09f, 0.95f);
+		RenderColor(this->m_RenderFrameX, this->m_RenderFrameY, this->m_RenderSizeX, this->m_RenderSizeY, 0.0, false, false);
+		EndRenderColor();
+
+		glColor4f(0.17f, 0.17f, 0.2f, 1.f);
+		RenderColor(this->m_RenderFrameX + border, this->m_RenderFrameY + border, this->m_RenderSizeX - (border * 2.f), this->m_RenderSizeY - (border * 2.f), 0.0, false, false);
+		EndRenderColor();
+
+		glColor4f(0.11f, 0.11f, 0.14f, 1.f);
+		RenderColor(this->m_RenderFrameX + border, this->m_RenderFrameY + border, this->m_RenderSizeX - (border * 2.f), topBar, 0.0, false, false);
+		EndRenderColor();
+
+		float mapOriginX = 0.f;
+		float mapOriginY = 0.f;
+		float mapSize = 0.f;
+		GetMiniMapFullMapRect(this->m_RenderFrameX, this->m_RenderFrameY, this->m_RenderSizeX, this->m_RenderSizeY, mapOriginX, mapOriginY, mapSize);
+
+		const float mapScale = mapSize / (float)MAX_MAP_SIZE;
+		const float mapUnit = MAX_MAP_SIZE / (float)TERRAIN_SIZE;
+
+		RenderBitmap(IMAGE_MINIMAP_INTERFACE, mapOriginX, mapOriginY, mapSize, mapSize, 0.f, 0.f, 1.f, 1.f, false, false, 0.f);
+
+		for (size_t i = 0; i < m_MinimapData.size(); i++)
+		{
+			runtime_render_objet(i, m_MinimapData[i].Location[0], m_MinimapData[i].Location[1], 1, m_MinimapData[i].Kind, 0.0, m_MinimapData[i].Name, rot);
+		}
+
+		if (this->IsMoving())
+		{
+			for (std::deque<PAIR>::iterator it = (&m_WayPoint)->begin(); it != (&m_WayPoint)->end(); it++)
+			{
+				runtime_render_objet(-1, it->first, it->second, 1, 6, 0.f, NULL, rot);
+			}
+		}
+
+		if (rendername)
+		{
+			g_pRenderText->SetTextColor(CLRDW_WHITE);
+			g_pRenderText->SetBgColor(0, 0, 0, 125);
+
+			for (size_t i = 0; i < m_MinimapData.size(); i++)
+			{
+				runtime_render_name(i, m_MinimapData[i].Name);
+			}
+		}
+
+		glDisable(GL_SCISSOR_TEST);
+
+		const float Tx = mapOriginX + (Hero->PositionY * mapUnit) * mapScale;
+		const float Ty = mapOriginY + (Hero->PositionX * mapUnit) * mapScale;
+		float Rot = (((BYTE)((Hero->Object.Angle[2] + 22.5f) / 360.f * 8.f + 1.f) % 8) + 2) * 45.0;
+
+		RenderFrameAnimation2(BITMAP_ITEM_ENDURANCE_INFO_BEGIN + 13, Tx, Ty, 40.f, 40.f, Rot, 32.0 / 512.0, 32.0 / 128.0, 1.25, 10, 30, false);
+		return;
+	}
 
 	glColor4f(0.f, 0.f, 0.f, 0.25f);
 	RenderColor(this->m_RenderFrameX, this->m_RenderFrameY, this->m_RenderSizeX, this->m_RenderSizeY, 0.0, false, false);
@@ -594,6 +711,28 @@ void SEASON3B::CNewUIMiniMap::runtime_render_objet(int i, int x, int y, int grou
 	const float sv = (32.f / 256.f) + ((32.f / 256.f) * ((type - 1) / 2));
 	const float ratio = (MAX_MAP_SIZE / (float)(TERRAIN_SIZE * TERRAIN_SCALE)) * m_RenderZoom;
 
+	if (this->IsVisible())
+	{
+		float mapOriginX = 0.f;
+		float mapOriginY = 0.f;
+		float mapSize = 0.f;
+		GetMiniMapFullMapRect(this->m_RenderFrameX, this->m_RenderFrameY, this->m_RenderSizeX, this->m_RenderSizeY, mapOriginX, mapOriginY, mapSize);
+		const float mapScale = mapSize / (float)MAX_MAP_SIZE;
+		const float mapUnit = MAX_MAP_SIZE / (float)TERRAIN_SIZE;
+
+		const float Tx = mapOriginX + (y * mapUnit) * mapScale;
+		const float Ty = mapOriginY + (x * mapUnit) * mapScale;
+
+		RenderBitmapLocalRotate2(IMAGE_MINIMAP_INTERFACE + 1, Tx, Ty, 26.f, 26.f, angle, su, sv, 32.f / 64.f, 32.f / 256.f, false);
+
+		if (name && name[0])
+		{
+			m_Btn_Loc[i][0] = (Tx);
+			m_Btn_Loc[i][1] = (Ty - 25.f);
+		}
+		return;
+	}
+
 	p1[0] = (((y * TERRAIN_SCALE) - Hero->GetPositionY()) * ratio);
 	p1[1] = (((x * TERRAIN_SCALE) - Hero->GetPositionX()) * ratio);
 	p1[2] = 0.f;
@@ -624,6 +763,31 @@ void SEASON3B::CNewUIMiniMap::runtime_render_name(int i, const char* name)
 
 bool SEASON3B::CNewUIMiniMap::runtime_calc_target(float mx, float my, int* Tx, int* Ty)
 {
+	if (this->IsVisible())
+	{
+		float mapOriginX = 0.f;
+		float mapOriginY = 0.f;
+		float mapSize = 0.f;
+		GetMiniMapFullMapRect(this->m_RenderFrameX, this->m_RenderFrameY, this->m_RenderSizeX, this->m_RenderSizeY, mapOriginX, mapOriginY, mapSize);
+		const float mapScale = mapSize / (float)MAX_MAP_SIZE;
+		const float mapUnit = MAX_MAP_SIZE / (float)TERRAIN_SIZE;
+
+		if (mx < mapOriginX || mx > (mapOriginX + mapSize) || my < mapOriginY || my > (mapOriginY + mapSize))
+		{
+			return false;
+		}
+
+		const float pixelX = (mx - mapOriginX) / mapScale;
+		const float pixelY = (my - mapOriginY) / mapScale;
+
+		const int mapY = (int)(pixelX / mapUnit);
+		const int mapX = (int)(pixelY / mapUnit);
+
+		(*Tx) = mapX;
+		(*Ty) = mapY;
+		return (*Tx >= 0 && *Tx < TERRAIN_SIZE&&* Ty >= 0 && *Ty < TERRAIN_SIZE);
+	}
+
 	float matrix[3][4];
 	vec3_t p1, p2, r;
 
