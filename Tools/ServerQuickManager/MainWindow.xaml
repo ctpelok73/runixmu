@@ -1,0 +1,263 @@
+<Window x:Class="ServerQuickManager.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Server Quick Manager"
+        Height="620"
+        Width="1020"
+        MinHeight="560"
+        MinWidth="900">
+    <DockPanel LastChildFill="True">
+        <StatusBar DockPanel.Dock="Bottom">
+            <TextBlock Name="StatusText" Text="Готово"/>
+        </StatusBar>
+
+        <Grid Margin="8">
+            <TabControl>
+                <TabItem Header="Публичный IP">
+                    <Grid Margin="4">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Border BorderBrush="#DDDDDD" BorderThickness="1" Padding="8" CornerRadius="6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Публичный IP"/>
+                                <TextBox Grid.Column="1" Name="PublicIpTextBox" Margin="6,0,0,0"/>
+                                <TextBlock Grid.Column="3" VerticalAlignment="Center" Text="Корень сервера"/>
+                                <TextBox Grid.Column="4" Name="ServerRootTextBox" Margin="6,0,0,0" IsReadOnly="True"/>
+                                <Button Grid.Column="6" Name="PickRootButton" Margin="0,0,6,0" Padding="12,4" Content="Выбрать" Click="PickRootClick"/>
+                                <Button Grid.Column="7" Name="ScanButton" Padding="12,4" Content="Сканировать" Click="ScanClick"/>
+                            </Grid>
+                        </Border>
+
+                        <Grid Grid.Row="1" Margin="0,8,0,8">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0" Orientation="Horizontal">
+                                <CheckBox Name="SkipLocalIpCheckBox" IsChecked="True" VerticalAlignment="Center" Content="Не менять 127.0.0.1 и 0.0.0.0"/>
+                                <CheckBox Name="CreateBackupCheckBox" Margin="16,0,0,0" IsChecked="True" VerticalAlignment="Center" Content="Создавать backup перед заменой"/>
+                                <Button Name="ApplyIpButton" Margin="16,0,0,0" Padding="14,4" Content="Применить IP во всех выбранных файлах" Click="ApplyIpClick"/>
+                            </StackPanel>
+                            <StackPanel Grid.Row="1" Margin="0,6,0,0" Orientation="Horizontal">
+                                <Button Name="DetectIpButton" Padding="12,4" Content="Авто IP" Click="DetectIpClick"/>
+                                <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" Text="Локальный:"/>
+                                <TextBlock Name="LocalIpText" Margin="6,0,0,0" Width="140" VerticalAlignment="Center"/>
+                                <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" Text="Внешний:"/>
+                                <TextBlock Name="ExternalIpText" Margin="6,0,0,0" Width="140" VerticalAlignment="Center"/>
+                                <RadioButton Name="UseLocalIpRadio" Margin="16,0,0,0" VerticalAlignment="Center" Content="Локальный" Checked="DetectedIpChoiceChanged"/>
+                                <RadioButton Name="UseExternalIpRadio" Margin="8,0,0,0" VerticalAlignment="Center" Content="Внешний" Checked="DetectedIpChoiceChanged"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <Border Grid.Row="2" BorderBrush="#DDDDDD" BorderThickness="1" Padding="8" CornerRadius="6">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Margin="0,0,0,8" Text="Найденные файлы с IP (снимите галочку, если файл не нужно менять)" FontWeight="SemiBold"/>
+                                <DataGrid Name="IpFilesGrid"
+                                          AutoGenerateColumns="False"
+                                          CanUserAddRows="False"
+                                          CanUserDeleteRows="False"
+                                          IsReadOnly="False"
+                                          SelectionMode="Single">
+                                    <DataGrid.Columns>
+                                        <DataGridCheckBoxColumn Header="Обновить" Binding="{Binding IsSelected, Mode=TwoWay}" Width="80"/>
+                                        <DataGridTextColumn Header="Совпадений" Binding="{Binding MatchCount}" Width="90"/>
+                                        <DataGridTextColumn Header="Файл" Binding="{Binding RelativePath}" Width="*"/>
+                                        <DataGridTextColumn Header="Пример IP" Binding="{Binding SampleIp}" Width="150"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Config SQL">
+                    <Grid Margin="4">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Border BorderBrush="#DDDDDD" BorderThickness="1" Padding="8" CornerRadius="6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="240"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="120"/>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="160"/>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="SQL Server"/>
+                                <TextBox Grid.Column="1" Name="SqlServerTextBox" Margin="6,0,0,0" Text=".\SQLEXPRESS"/>
+                                <Button Grid.Column="2" Margin="8,0,0,0" Padding="12,4" Content="Авто SQL" Click="DetectSqlServerClick"/>
+                                <TextBlock Grid.Column="4" VerticalAlignment="Center" Text="Login"/>
+                                <TextBox Grid.Column="5" Name="SqlLoginTextBox" Margin="6,0,0,0" Text="sa"/>
+                                <TextBlock Grid.Column="7" VerticalAlignment="Center" Text="Password"/>
+                                <PasswordBox Grid.Column="8" Name="SqlPasswordBox" Margin="6,0,0,0"/>
+                                <CheckBox Grid.Column="10" Name="UseIntegratedAuthCheckBox" VerticalAlignment="Center" Content="Windows auth"/>
+                                <Button Grid.Column="11" Margin="12,0,0,0" Padding="12,4" Content="Проверить" Click="TestSqlConnectionClick"/>
+                                <Button Grid.Column="12" Margin="8,0,0,0" Padding="12,4" Content="Реестр" Click="ApplyRegistryClick"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Row="1" Margin="0,8,0,0" BorderBrush="#DDDDDD" BorderThickness="1" Padding="8" CornerRadius="6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="300"/>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Базы (через ; или ,)"/>
+                                <TextBox Grid.Row="0" Grid.Column="1" Name="DatabaseListTextBox" Margin="6,0,0,0" Text="MuOnline;Me_MuOnline"/>
+                                <TextBlock Grid.Row="0" Grid.Column="3" VerticalAlignment="Center" Text="Папка backup"/>
+                                <TextBox Grid.Row="0" Grid.Column="4" Name="BackupFolderTextBox" Margin="6,0,0,0"/>
+                                <Button Grid.Row="0" Grid.Column="5" Margin="8,0,0,0" Padding="12,4" Content="Выбрать" Click="PickBackupFolderClick"/>
+                                <Button Grid.Row="0" Grid.Column="6" Margin="8,0,0,0" Padding="12,4" Content="Backup Now" Click="BackupNowClick"/>
+
+                                <CheckBox Grid.Row="1" Grid.Column="0" Name="EnableAutoBackupCheckBox" Margin="0,8,0,0" VerticalAlignment="Center" Content="Автобекап"/>
+                                <TextBlock Grid.Row="1" Grid.Column="1" Margin="6,8,0,0" VerticalAlignment="Center" Text="Интервал (минуты)"/>
+                                <TextBox Grid.Row="1" Grid.Column="1" Name="AutoBackupMinutesTextBox" Margin="130,8,0,0" Width="80" HorizontalAlignment="Left" Text="60"/>
+                                <Button Grid.Row="1" Grid.Column="3" Margin="0,8,0,0" Padding="12,4" Content="Сохранить SQL настройки" Click="SaveSqlSettingsClick"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Row="2" Margin="0,8,0,0" BorderBrush="#DDDDDD" BorderThickness="1" Padding="8" CornerRadius="6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Файл .bak"/>
+                                <TextBox Grid.Column="1" Name="RestoreBakPathTextBox" Margin="6,0,0,0"/>
+                                <Button Grid.Column="2" Margin="8,0,0,0" Padding="12,4" Content="Выбрать" Click="PickBakFileClick"/>
+                                <TextBox Grid.Column="3" Name="RestoreDatabaseTextBox" Margin="8,0,0,0" Text="MuOnline"/>
+                                <Button Grid.Column="4" Margin="8,0,0,0" Padding="12,4" Content="Restore DB" Click="RestoreDatabaseClick"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Row="3" Margin="0,8,0,0" BorderBrush="#DDDDDD" BorderThickness="1" Padding="8" CornerRadius="6">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Name="ScanSqlConfigButton" Padding="12,4" Content="Сканировать SQL конфиги" Click="ScanSqlConfigClick"/>
+                                    <TextBlock Margin="16,0,0,0" VerticalAlignment="Center" Text="Старый пароль"/>
+                                    <PasswordBox Name="OldSqlConfigPasswordBox" Margin="8,0,0,0" Width="180"/>
+                                    <TextBlock Margin="16,0,0,0" VerticalAlignment="Center" Text="Новый пароль"/>
+                                    <PasswordBox Name="NewSqlConfigPasswordBox" Margin="8,0,0,0" Width="180"/>
+                                    <Button Name="ApplySqlPasswordButton" Margin="12,0,0,0" Padding="12,4" Content="Обновить пароль в конфигах" Click="ApplySqlPasswordInConfigsClick"/>
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="1" Margin="0,8,0,8" Text="Перед Restore/изменением пароля сначала сделайте бекап базы. Используйте Backup Now или внешний backup."/>
+
+                                <DataGrid Grid.Row="2"
+                                          Name="SqlConfigFilesGrid"
+                                          AutoGenerateColumns="False"
+                                          CanUserAddRows="False"
+                                          CanUserDeleteRows="False"
+                                          IsReadOnly="False"
+                                          SelectionMode="Single">
+                                    <DataGrid.Columns>
+                                        <DataGridCheckBoxColumn Header="Обновить" Binding="{Binding IsSelected, Mode=TwoWay}" Width="80"/>
+                                        <DataGridTextColumn Header="Совпадений" Binding="{Binding MatchCount}" Width="90"/>
+                                        <DataGridTextColumn Header="Файл" Binding="{Binding RelativePath}" Width="*"/>
+                                        <DataGridTextColumn Header="Пример" Binding="{Binding SampleHint}" Width="200"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Автозапуск">
+                    <Grid Margin="4">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <Border BorderBrush="#DDDDDD" BorderThickness="1" Padding="8" CornerRadius="6">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Name="AddExeButton" Padding="12,4" Content="Добавить EXE" Click="AddExeClick"/>
+                                <Button Name="RemoveExeButton" Margin="8,0,0,0" Padding="12,4" Content="Удалить выбранный" Click="RemoveExeClick"/>
+                                <Button Name="StartAllButton" Margin="20,0,0,0" Padding="12,4" Content="Start All" Click="StartAllClick"/>
+                                <Button Name="StopAllButton" Margin="8,0,0,0" Padding="12,4" Content="Stop All" Click="StopAllClick"/>
+                                <Button Name="SaveProcessesButton" Margin="20,0,0,0" Padding="12,4" Content="Сохранить список" Click="SaveProcessesClick"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="1" Margin="0,8,0,8" BorderBrush="#DDDDDD" BorderThickness="1" Padding="8" CornerRadius="6">
+                            <DataGrid Name="ProcessesGrid"
+                                      AutoGenerateColumns="False"
+                                      CanUserAddRows="False"
+                                      CanUserDeleteRows="False"
+                                      IsReadOnly="False"
+                                      SelectionMode="Single">
+                                <DataGrid.Columns>
+                                    <DataGridCheckBoxColumn Header="On" Binding="{Binding IsEnabled, Mode=TwoWay}" Width="50"/>
+                                    <DataGridCheckBoxColumn Header="Restart" Binding="{Binding AutoRestart, Mode=TwoWay}" Width="70"/>
+                                    <DataGridTextColumn Header="Имя" Binding="{Binding Name}" Width="180"/>
+                                    <DataGridTextColumn Header="EXE путь" Binding="{Binding RelativePath}" Width="*"/>
+                                    <DataGridTextColumn Header="Статус" Binding="{Binding Status}" Width="110"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Border>
+
+                        <Border Grid.Row="2" BorderBrush="#DDDDDD" BorderThickness="1" Padding="8" CornerRadius="6">
+                            <StackPanel Orientation="Vertical">
+                                <CheckBox Name="EnableAutoRunOnLaunchCheckBox" Content="Автозапуск включенных серверов при старте утилиты (после успешной настройки IP)" Checked="AutoStartSettingChanged" Unchecked="AutoStartSettingChanged"/>
+                                <TextBlock Margin="0,4,0,0" Text="Мониторинг процессов работает постоянно. Если включен Restart и процесс упал, утилита поднимет его автоматически."/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+        </Grid>
+    </DockPanel>
+</Window>
