@@ -238,6 +238,9 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
+    <ResourceCompile>
+      <PreprocessorDefinitions>AFX_TARG_ENU;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug_EX603|Win32'">
     <ClCompile>
@@ -271,6 +274,9 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
+    <ResourceCompile>
+      <PreprocessorDefinitions>AFX_TARG_ENU;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release_EX401|Win32'">
     <ClCompile>
@@ -931,6 +937,23 @@
     <ClCompile Include="WindowsConsole.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ResourceCompile Include="GameServer.rc">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release_EX603|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release_EX603_LICENSE|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release_EX603CS|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release_EX603CS_LICENSE|Win32'">true</ExcludedFromBuild>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)|$(Platform)'=='Release_EX603|Win32'">
+    <ResourceCompile Include="GameServer.rc" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)|$(Platform)'=='Release_EX603_LICENSE|Win32'">
+    <ResourceCompile Include="GameServer.rc" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)|$(Platform)'=='Release_EX603CS|Win32'">
+    <ResourceCompile Include="GameServer.rc" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)|$(Platform)'=='Release_EX603CS_LICENSE|Win32'">
     <ResourceCompile Include="GameServer.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
