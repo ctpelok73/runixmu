@@ -230,3 +230,10 @@ scripts/
 /.trae/rules/rules.md
 /GameServer/GUI_XML_EDITOR_PLAN.md
 /GameServer/Data/
+
+# ServerQuickManager Qt build/release artifacts
+/Tools/ServerQuickManager.Qt/build/
+/ServerQuickManagerQt_*/
+/ServerQuickManagerQt_final/
+/ServerQuickManagerQt_final.zip
+/ServerQuickManagerQt_new/
