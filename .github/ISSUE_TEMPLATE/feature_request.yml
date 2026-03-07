@@ -1,0 +1,32 @@
+name: Feature request
+description: Предложить улучшение в рамках S6E3
+title: "[FEATURE] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Проблема
+      placeholder: Какую проблему это решает
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Предложение
+      placeholder: Что именно хотите добавить или изменить
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Ограничения S6E3
+      description: Подтвердите, что фича не требует контента поздних сезонов
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Альтернативы
+      placeholder: Какие варианты уже рассматривались
