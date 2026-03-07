@@ -53,12 +53,14 @@ bool CGMKarutan1::MoveObject(OBJECT* o)
 		float fLuminosity = (float)(rand() % 4 + 3) * 0.1f;
 		Vector(fLuminosity, fLuminosity * 0.6f, fLuminosity * 0.2f, vLight);
 		AddTerrainLight(o->Position[0], o->Position[1], vLight, 3, PrimaryTerrainLight);
+		return true;
 	}
 	case 114:
+		o->HiddenMesh = -2;
+		return true;
 	case 115:
 	case 116:
 	case 118:
-		o->HiddenMesh = -2;
 		return true;
 	}
 
@@ -110,23 +112,26 @@ bool CGMKarutan1::RenderObjectVisual(OBJECT* o, BMD* b)
 		Vector(1.0f, 0.2f, 0.0f, vLightFire);
 		CreateSprite(BITMAP_LIGHT, o->Position, 2.0f * o->Scale, vLightFire, o);
 
-		vec3_t vLight;
-		Vector(1.0f, 1.0f, 1.0f, vLight);
-
-		switch (rand() % 3)
+		if (rand() % 4 == 0)
 		{
-		case 0:
-			CreateParticleSync(BITMAP_FIRE_HIK1, o->Position, o->Angle, vLight, 0, o->Scale);
-			break;
-		case 1:
-			CreateParticleSync(BITMAP_FIRE_CURSEDLICH, o->Position, o->Angle, vLight, 4, o->Scale);
-			break;
-		case 2:
-			CreateParticleSync(BITMAP_FIRE_HIK3, o->Position, o->Angle, vLight, 0, o->Scale);
-			break;
+			vec3_t vLight;
+			Vector(1.0f, 1.0f, 1.0f, vLight);
+
+			switch (rand() % 3)
+			{
+			case 0:
+				CreateParticleSync(BITMAP_FIRE_HIK1, o->Position, o->Angle, vLight, 0, o->Scale);
+				break;
+			case 1:
+				CreateParticleSync(BITMAP_FIRE_CURSEDLICH, o->Position, o->Angle, vLight, 4, o->Scale);
+				break;
+			case 2:
+				CreateParticleSync(BITMAP_FIRE_HIK3, o->Position, o->Angle, vLight, 0, o->Scale);
+				break;
+			}
 		}
+		return true;
 	}
-	return true;
 	case 114:
 		if (rand() % 3 == 0)
 		{
@@ -140,7 +145,7 @@ bool CGMKarutan1::RenderObjectVisual(OBJECT* o, BMD* b)
 		{
 			vec3_t vLight;
 			Vector(0.04f, 0.04f, 0.04f, vLight);
-			for (int i = 0; i < 20; ++i)
+			for (int i = 0; i < 2; ++i)
 				CreateParticle(BITMAP_CLOUD, o->Position, o->Angle, vLight, 0, o->Scale, o);
 		}
 		return true;
@@ -154,12 +159,11 @@ bool CGMKarutan1::RenderObjectVisual(OBJECT* o, BMD* b)
 		}
 		return true;
 	case 118:
-		if (o->HiddenMesh != -2)
+		if (o->HiddenMesh != -2 && rand() % 5 == 0)
 		{
 			vec3_t vLight;
 			Vector(0.27f, 0.2f, 0.1f, vLight);
-			for (int i = 0; i < 4; ++i)
-				CreateParticleSync(BITMAP_CLOUD, o->Position, o->Angle, vLight, 0, o->Scale, o);
+			CreateParticleSync(BITMAP_CLOUD, o->Position, o->Angle, vLight, 0, o->Scale, o);
 		}
 		return true;
 	}
@@ -341,50 +345,50 @@ CHARACTER* CGMKarutan1::CreateMonster(int iType, int PosX, int PosY, int Key)
 	case 569:
 		OpenMonsterModel(209);
 		pCharacter = CreateCharacter(Key, MODEL_MONSTER01 + 209, PosX, PosY);
-		strcpy(pCharacter->ID, "¸Íµ¶°í¸®Àü°¥");
+		strcpy(pCharacter->ID, "ï¿½Íµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½");
 		pCharacter->Object.Scale = 1.0f;
 		break;
 	case 570:
 		OpenMonsterModel(210);
 		pCharacter = CreateCharacter(Key, MODEL_MONSTER01 + 210, PosX, PosY);
-		strcpy(pCharacter->ID, "º»½ºÄÝÇÇ¿Â");
+		strcpy(pCharacter->ID, "ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ç¿ï¿½");
 		pCharacter->Object.Scale = 0.58f;
 		break;
 	case 571:
 		OpenMonsterModel(211);
 		pCharacter = CreateCharacter(Key, MODEL_MONSTER01 + 211, PosX, PosY);
-		strcpy(pCharacter->ID, "¿À¸£Ä¿½º");
+		strcpy(pCharacter->ID, "ï¿½ï¿½ï¿½ï¿½Ä¿ï¿½ï¿½");
 		pCharacter->Object.Scale = 0.64f;
 		break;
 	case 572:
 		OpenMonsterModel(212);
 		pCharacter = CreateCharacter(Key, MODEL_MONSTER01 + 212, PosX, PosY);
-		strcpy(pCharacter->ID, "°ñ·Ï");
+		strcpy(pCharacter->ID, "ï¿½ï¿½ï¿½");
 		pCharacter->Object.Scale = 1.5f;
 		break;
 	case 573:
 		OpenMonsterModel(213);
 		pCharacter = CreateCharacter(Key, MODEL_MONSTER01 + 213, PosX, PosY);
-		strcpy(pCharacter->ID, "Å©¸³Å¸");
+		strcpy(pCharacter->ID, "Å©ï¿½ï¿½Å¸");
 		pCharacter->Object.Scale = 1.5f;
 		break;
 	case 574:
 		OpenMonsterModel(214);
 		pCharacter = CreateCharacter(Key, MODEL_MONSTER01 + 214, PosX, PosY);
-		strcpy(pCharacter->ID, "Å©¸³Æ÷½º");
+		strcpy(pCharacter->ID, "Å©ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½");
 		pCharacter->Object.Scale = 1.25f;
 		break;
 	case 575:
 		OpenMonsterModel(215);
 		pCharacter = CreateCharacter(Key, MODEL_MONSTER01 + 215, PosX, PosY);
-		strcpy(pCharacter->ID, "ÄÜµå¶ó");
+		strcpy(pCharacter->ID, "ï¿½Üµï¿½ï¿½");
 		pCharacter->Object.Scale = 1.45f;
 		pCharacter->Object.LifeTime = 100;
 		break;
 	case 576:
 		OpenMonsterModel(216);
 		pCharacter = CreateCharacter(Key, MODEL_MONSTER01 + 216, PosX, PosY);
-		strcpy(pCharacter->ID, "³ª¸£ÄÜµå¶ó");
+		strcpy(pCharacter->ID, "ï¿½ï¿½ï¿½ï¿½ï¿½Üµï¿½ï¿½");
 		pCharacter->Object.Scale = 1.55f;
 		pCharacter->Object.LifeTime = 100;
 
@@ -422,7 +426,7 @@ bool CGMKarutan1::MoveMonsterVisual(OBJECT* o, BMD* b)
 		CreateSprite(BITMAP_LIGHT, Position, 2.0f, Light, o);
 		return true;
 	case MODEL_MONSTER01 + 212:
-		if (o->CurrentAction == MONSTER01_WALK)
+		if (o->CurrentAction == MONSTER01_WALK && rand() % 5 == 0)
 		{
 			vec3_t Position;
 			Vector(o->Position[0] + rand() % 200 - 100, o->Position[1] + rand() % 200 - 100, o->Position[2], Position);
@@ -497,7 +501,7 @@ bool CGMKarutan1::MoveMonsterVisual(OBJECT* o, BMD* b)
 				CreateParticleSync(BITMAP_FIRE, EndPos, o->Angle, Light, 2, 2.f);
 				CreateParticleSync(BITMAP_ADV_SMOKE + 1, EndPos, o->Angle, o->Light);
 				CreateParticleSync(BITMAP_ADV_SMOKE + 1, EndPos, o->Angle, o->Light, 1, 1.8f);
-				for (int i = 0; i < 10; ++i)
+				for (int i = 0; i < 2; ++i)
 					CreateEffectSync(MODEL_STONE2, EndPos, o->Angle, o->Light);
 			}
 		}
