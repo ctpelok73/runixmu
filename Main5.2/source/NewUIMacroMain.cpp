@@ -978,7 +978,14 @@ void SEASON3B::CNewUIMacroMain::EventOrderWindows(double WindowsX, double Window
 	}
 
 	this->SetPos((int)RenderFrameX, m_Pos.y);
-	this->SetPosOptionButtonGroup(RenderFrameX + 63, m_Pos.y + 233);
+
+	
+#if MAIN_UPDATE > 603
+	int addx = ((WIN_WINDOW_SIZEX - 168) / 2) - 12;
+	this->SetPosOptionButtonGroup(RenderFrameX + addx + 17, m_Pos.y + 233);
+#else
+	this->SetPosOptionButtonGroup(RenderFrameX + 17, m_Pos.y + 233);
+#endif
 }
 
 void SEASON3B::CNewUIMacroMain::RenderFrame()
@@ -1440,9 +1447,9 @@ void SEASON3B::CNewUIMacroMain::InitOptionButtonGroup()
 	COptionButtonGroup* optionDark = new COptionButtonGroup;
 
 #if MAIN_UPDATE > 603
-	optionDark->Create(BITMAP_check_box, RenderFrameX + 63, RenderFrameY + 233, 15, 15, 3);
+	optionDark->Create(BITMAP_check_box, RenderFrameX + 17, RenderFrameY + 233, 15, 15, 3);
 #else
-	optionDark->Create(Image_OptionButton, RenderFrameX + 63, RenderFrameY + 233, 15, 15, 3);
+	optionDark->Create(Image_OptionButton, RenderFrameX + 17, RenderFrameY + 233, 15, 15, 3);
 #endif
 	optionDark->SetOptionText(0, 52, 0, GlobalText[3533]);
 	optionDark->SetOptionText(1, 0, 0, GlobalText[3534]);
