@@ -23,6 +23,7 @@
 #include "ObjectManager.h"
 #include "ServerInfo.h"
 #include "SkillManager.h"
+#include "Log.h"
 #include "Util.h"
 
 CMove gMove;
@@ -103,6 +104,8 @@ void CMove::Load(char* path) // OK
 			this->m_MoveInfo.insert(type_map_move::value_type(info.Index, info));
 		}
 
+		LogAdd(LOG_BLUE, "[XML] Move loaded successfully (%d records) [%s]", (int)this->m_MoveInfo.size(), sourcePath);
+
 		return;
 	}
 
@@ -166,6 +169,8 @@ void CMove::Load(char* path) // OK
 	{
 		ErrorMessageBox(lpMemScript->GetLastError());
 	}
+
+	LogAdd(LOG_BLUE, "[TXT] Move loaded successfully (%d records) [%s]", (int)this->m_MoveInfo.size(), path);
 
 	delete lpMemScript;
 }

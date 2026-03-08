@@ -13,13 +13,22 @@ namespace ConfigEditor;
 public partial class MainWindow : Window
 {
     private const string TextValueColumn = "_TextValue";
+    private const string ReadyXmlFolderName = "Data_XML_READY";
     private string _dataRoot;
     private readonly ObservableCollection<PropertyItem> _inspectorItems = new();
     private readonly Dictionary<string, string> _fileGuides = new(StringComparer.OrdinalIgnoreCase)
     {
         ["move.xml"] = "Move.xml: каждая строка это точка телепорта. Редактируйте Index, Gate, уровни и reset-ограничения. После правки жмите Validate, затем Backup и Save.",
+        ["movesummon.xml"] = "MoveSummon.xml: зоны возврата талисманом. Проверяйте диапазоны X/Y и ограничения уровня/reset.",
+        ["gate.xml"] = "Gate.xml: таблица ворот/точек выхода. Проверяйте диапазоны координат, TargetGate и ограничения по уровню/reset.",
         ["itemmove.xml"] = "ItemMove.xml: это флаги запретов/разрешений. 1 = разрешено, 0 = запрещено. Поддерживаются поля BanDrop/BanSell/BanTrade/BanVaul и AllowDrop/AllowSell/AllowTrade/AllowVault.",
         ["itemdrop.xml"] = "ItemDrop.xml: это правила дропа. Важно сохранять корректные диапазоны MonsterLevelMin/MonsterLevelMax и адекватный DropRate.",
+        ["custommove.xml"] = "CustomMove.xml: команды телепорта. Проверяйте уникальность Name, карту, координаты и лимиты.",
+        ["customnpcmove.xml"] = "CustomNpcMove.xml: перемещения через NPC. Проверяйте NPC-точку, карту назначения и лимиты.",
+        ["customnpccommand.xml"] = "CustomNpcCommand.xml: команды через NPC. Проверяйте NPC-точку, Talk (0/1) и текст команды.",
+        ["customcommanddescription.xml"] = "CustomCommandDescription.xml: описания команд. Проверяйте уникальность Command и длину Description.",
+        ["customranking.xml"] = "CustomRanking.xml: вкладки рейтинга. Проверяйте уникальность Index и названия колонок.",
+        ["customrankuser.xml"] = "CustomRankUser.xml: ранги игрока по Reset/MReset/Level. Проверяйте диапазоны ResetMin/ResetMax.",
         ["item.xml"] = "Item.xml: основной справочник предметов. Используется сервером напрямую, правки только осознанно.",
         ["eventname.xml"] = "EventName.xml: названия и строки событий для серверных уведомлений.",
         ["mixexpansion.xml"] = "MixExpansion.xml: конфиг расширенного микса GoblinMixExpansion.",
@@ -33,8 +42,16 @@ public partial class MainWindow : Window
     private readonly HashSet<string> _serverUsedXmlFileNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "Move.xml",
+        "MoveSummon.xml",
+        "Gate.xml",
         "ItemDrop.xml",
         "ItemMove.xml",
+        "CustomMove.xml",
+        "CustomNpcMove.xml",
+        "CustomNpcCommand.xml",
+        "CustomCommandDescription.xml",
+        "CustomRanking.xml",
+        "CustomRankUser.xml",
         "Item.xml",
         "PetItemOption.xml",
         "FlagItemOption.xml",
@@ -58,7 +75,38 @@ public partial class MainWindow : Window
             ["MinReset"] = "Минимальный reset, -1 отключает ограничение.",
             ["MaxReset"] = "Максимальный reset, -1 отключает ограничение.",
             ["AccountLevel"] = "Уровень аккаунта для доступа.",
-            ["Gate"] = "Номер gate из Gate.txt."
+            ["Gate"] = "Номер gate из Gate.xml или Gate.txt."
+        },
+        ["movesummon.xml"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Map"] = "Индекс карты.",
+            ["X"] = "Начальная X координата разрешенной зоны.",
+            ["Y"] = "Начальная Y координата разрешенной зоны.",
+            ["TX"] = "Конечная X координата разрешенной зоны.",
+            ["TY"] = "Конечная Y координата разрешенной зоны.",
+            ["MinLevel"] = "Минимальный уровень, -1 отключает ограничение.",
+            ["MaxLevel"] = "Максимальный уровень, -1 отключает ограничение.",
+            ["MinReset"] = "Минимальный reset, -1 отключает ограничение.",
+            ["MaxReset"] = "Максимальный reset, -1 отключает ограничение.",
+            ["AccountLevel"] = "Уровень аккаунта для доступа.",
+            ["PkMove"] = "0 запрещает move для PK >= 5, 1 разрешает."
+        },
+        ["gate.xml"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Index"] = "Уникальный ID gate.",
+            ["Flag"] = "Тип gate по логике сервера.",
+            ["Map"] = "Индекс карты.",
+            ["X"] = "X координата телепорта.",
+            ["Y"] = "Y координата телепорта.",
+            ["TX"] = "Целевая X зона входа в gate.",
+            ["TY"] = "Целевая Y зона входа в gate.",
+            ["TargetGate"] = "ID связанного gate (0 если прямой выход).",
+            ["Dir"] = "Направление персонажа после телепорта.",
+            ["MinLevel"] = "Минимальный уровень, -1 отключает ограничение.",
+            ["MaxLevel"] = "Максимальный уровень, -1 отключает ограничение.",
+            ["MinReset"] = "Минимальный reset, -1 отключает ограничение.",
+            ["MaxReset"] = "Максимальный reset, -1 отключает ограничение.",
+            ["AccountLevel"] = "Уровень аккаунта для доступа."
         },
         ["itemmove.xml"] = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -92,6 +140,74 @@ public partial class MainWindow : Window
             ["MonsterLevelMax"] = "Максимальный уровень монстра, -1 отключает ограничение.",
             ["DropRate"] = "Шанс по внутренней шкале сервера.",
             ["Comment"] = "Только подпись для удобства."
+        },
+        ["custommove.xml"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Index"] = "Уникальный ID записи custom move.",
+            ["Name"] = "Текст команды, например /arena1.",
+            ["Map"] = "Индекс карты телепорта.",
+            ["X"] = "X координата.",
+            ["Y"] = "Y координата.",
+            ["MinLevel"] = "Минимальный уровень, -1 отключает ограничение.",
+            ["MaxLevel"] = "Максимальный уровень, -1 отключает ограничение.",
+            ["MinReset"] = "Минимальный reset, -1 отключает ограничение.",
+            ["MaxReset"] = "Максимальный reset, -1 отключает ограничение.",
+            ["MinMReset"] = "Минимальный master reset, -1 отключает ограничение.",
+            ["MaxMReset"] = "Максимальный master reset, -1 отключает ограничение.",
+            ["AccountLevel"] = "Уровень аккаунта для доступа.",
+            ["PkMove"] = "0 запрещает move для PK >= 5, 1 разрешает."
+        },
+        ["customnpcmove.xml"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Index"] = "Уникальный ID записи NPC move.",
+            ["MonsterClass"] = "Класс NPC.",
+            ["Map"] = "Карта NPC.",
+            ["X"] = "X координата NPC.",
+            ["Y"] = "Y координата NPC.",
+            ["MoveMap"] = "Карта назначения.",
+            ["MoveX"] = "X координата назначения.",
+            ["MoveY"] = "Y координата назначения.",
+            ["MinLevel"] = "Минимальный уровень, -1 отключает ограничение.",
+            ["MaxLevel"] = "Максимальный уровень, -1 отключает ограничение.",
+            ["MinReset"] = "Минимальный reset, -1 отключает ограничение.",
+            ["MaxReset"] = "Максимальный reset, -1 отключает ограничение.",
+            ["MinMReset"] = "Минимальный master reset, -1 отключает ограничение.",
+            ["MaxMReset"] = "Максимальный master reset, -1 отключает ограничение.",
+            ["AccountLevel"] = "Уровень аккаунта для доступа.",
+            ["PkMove"] = "0 запрещает move для PK >= 5, 1 разрешает."
+        },
+        ["customnpccommand.xml"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Index"] = "Уникальный ID записи NPC command.",
+            ["MonsterClass"] = "Класс NPC.",
+            ["Map"] = "Карта NPC.",
+            ["X"] = "X координата NPC.",
+            ["Y"] = "Y координата NPC.",
+            ["Talk"] = "1 отправляет как NPC-диалог, 0 как обычную команду.",
+            ["Command"] = "Текст команды, которая выполнится при клике на NPC."
+        },
+        ["customcommanddescription.xml"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Index"] = "Уникальный ID описания команды.",
+            ["Command"] = "Команда игрока (например, /help).",
+            ["Description"] = "Текст подсказки/описания, показываемый игроку."
+        },
+        ["customranking.xml"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Index"] = "Номер вкладки рейтинга.",
+            ["Name"] = "Название вкладки рейтинга.",
+            ["Col1"] = "Заголовок первой колонки.",
+            ["Col2"] = "Заголовок второй колонки."
+        },
+        ["customrankuser.xml"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Index"] = "Номер ранга.",
+            ["Name"] = "Название ранга.",
+            ["ResetMin"] = "Минимальное значение для ранга.",
+            ["ResetMax"] = "Максимальное значение для ранга, -1 без верхней границы.",
+            ["Coin1"] = "Награда Coin1.",
+            ["Coin2"] = "Награда Coin2.",
+            ["Coin3"] = "Награда Coin3."
         }
     };
     private readonly DataTable _recordsTable = new();
@@ -104,6 +220,20 @@ public partial class MainWindow : Window
     private readonly List<int> _itemIndexList = new();
     private readonly HashSet<int> _itemIndexSet = new();
     private readonly Dictionary<int, string> _itemNameByIndex = new();
+    private readonly string[] _readyXmlRelativePaths =
+    {
+        Path.Combine("Move", "Move.xml"),
+        Path.Combine("Move", "MoveSummon.xml"),
+        Path.Combine("Move", "Gate.xml"),
+        Path.Combine("Item", "ItemMove.xml"),
+        Path.Combine("Item", "ItemDrop.xml"),
+        Path.Combine("Custom", "CustomMove.xml"),
+        Path.Combine("Custom", "CustomNpcMove.xml"),
+        Path.Combine("Custom", "CustomNpcCommand.xml"),
+        Path.Combine("Custom", "CustomCommandDescription.xml"),
+        Path.Combine("Custom", "CustomRanking.xml"),
+        Path.Combine("Custom", "CustomRankUser.xml")
+    };
     private readonly string[] _itemClassFields =
     {
         "DarkWizard",
@@ -187,6 +317,41 @@ public partial class MainWindow : Window
     };
     private readonly Dictionary<string, List<PresetOption>> _presetsByFile = new(StringComparer.OrdinalIgnoreCase)
     {
+        ["MoveSummon.xml"] = new List<PresetOption>
+        {
+            new("MoveSummon: Базовые ограничения", new Dictionary<string, string>
+            {
+                ["MinLevel"] = "1",
+                ["MaxLevel"] = "400",
+                ["MinReset"] = "-1",
+                ["MaxReset"] = "-1",
+                ["AccountLevel"] = "0",
+                ["PkMove"] = "0"
+            }),
+            new("MoveSummon: Свободный доступ", new Dictionary<string, string>
+            {
+                ["MinLevel"] = "-1",
+                ["MaxLevel"] = "-1",
+                ["MinReset"] = "-1",
+                ["MaxReset"] = "-1",
+                ["AccountLevel"] = "0",
+                ["PkMove"] = "1"
+            })
+        },
+        ["Gate.xml"] = new List<PresetOption>
+        {
+            new("Gate: Базовый вход", new Dictionary<string, string>
+            {
+                ["Flag"] = "0",
+                ["TargetGate"] = "0",
+                ["Dir"] = "0",
+                ["MinLevel"] = "-1",
+                ["MaxLevel"] = "-1",
+                ["MinReset"] = "-1",
+                ["MaxReset"] = "-1",
+                ["AccountLevel"] = "0"
+            })
+        },
         ["Move.xml"] = new List<PresetOption>
         {
             new("Move: Свободный доступ", new Dictionary<string, string>
@@ -251,6 +416,81 @@ public partial class MainWindow : Window
             new("ItemDrop: Высокий шанс", new Dictionary<string, string>
             {
                 ["DropRate"] = "5000"
+            })
+        },
+        ["CustomMove.xml"] = new List<PresetOption>
+        {
+            new("CustomMove: Базовый доступ", new Dictionary<string, string>
+            {
+                ["MinLevel"] = "1",
+                ["MaxLevel"] = "-1",
+                ["MinReset"] = "-1",
+                ["MaxReset"] = "-1",
+                ["MinMReset"] = "-1",
+                ["MaxMReset"] = "-1",
+                ["AccountLevel"] = "0",
+                ["PkMove"] = "1"
+            }),
+            new("CustomMove: Ограничить PK", new Dictionary<string, string>
+            {
+                ["PkMove"] = "0"
+            })
+        },
+        ["CustomNpcMove.xml"] = new List<PresetOption>
+        {
+            new("CustomNpcMove: Базовый доступ", new Dictionary<string, string>
+            {
+                ["MinLevel"] = "1",
+                ["MaxLevel"] = "-1",
+                ["MinReset"] = "-1",
+                ["MaxReset"] = "-1",
+                ["MinMReset"] = "-1",
+                ["MaxMReset"] = "-1",
+                ["AccountLevel"] = "0",
+                ["PkMove"] = "1"
+            }),
+            new("CustomNpcMove: Ограничить PK", new Dictionary<string, string>
+            {
+                ["PkMove"] = "0"
+            })
+        },
+        ["CustomNpcCommand.xml"] = new List<PresetOption>
+        {
+            new("CustomNpcCommand: Диалог через NPC", new Dictionary<string, string>
+            {
+                ["Talk"] = "1"
+            }),
+            new("CustomNpcCommand: Тихий вызов команды", new Dictionary<string, string>
+            {
+                ["Talk"] = "0"
+            })
+        },
+        ["CustomCommandDescription.xml"] = new List<PresetOption>
+        {
+            new("CustomCommandDescription: Базовое описание", new Dictionary<string, string>
+            {
+                ["Command"] = "/help",
+                ["Description"] = "Показывает доступные команды."
+            })
+        },
+        ["CustomRanking.xml"] = new List<PresetOption>
+        {
+            new("CustomRanking: Базовая вкладка", new Dictionary<string, string>
+            {
+                ["Name"] = "Top Players",
+                ["Col1"] = "Name",
+                ["Col2"] = "Score"
+            })
+        },
+        ["CustomRankUser.xml"] = new List<PresetOption>
+        {
+            new("CustomRankUser: Базовый ранг", new Dictionary<string, string>
+            {
+                ["ResetMin"] = "0",
+                ["ResetMax"] = "-1",
+                ["Coin1"] = "0",
+                ["Coin2"] = "0",
+                ["Coin3"] = "0"
             })
         }
     };
@@ -603,7 +843,7 @@ public partial class MainWindow : Window
         }
 
         _currentDocument.Save(_currentFilePath);
-        StatusText.Text = "Saved";
+        SynchronizeDependencies(true);
     }
 
     private void BackupClick(object sender, RoutedEventArgs e)
@@ -634,6 +874,11 @@ public partial class MainWindow : Window
             StatusText.Text = $"Backup error: {ex.Message}";
             MessageBox.Show(ex.Message, "Backup", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private void SyncDependenciesClick(object sender, RoutedEventArgs e)
+    {
+        SynchronizeDependencies(true);
     }
 
     private void RefreshInspectorFromRow(DataRowView row)
@@ -721,7 +966,7 @@ public partial class MainWindow : Window
 
                 var info = new TextBlock
                 {
-                    Text = "Зависимость: Data\\Move\\Gate.txt",
+                    Text = "Зависимость: Data\\Move\\Gate.xml (или Gate.txt)",
                     Margin = new Thickness(0, 4, 0, 0),
                     Foreground = System.Windows.Media.Brushes.DimGray,
                     FontSize = 11
@@ -730,6 +975,112 @@ public partial class MainWindow : Window
             }
             else if (fileName.Equals("ItemDrop.xml", StringComparison.OrdinalIgnoreCase) &&
                      column.ColumnName.Equals("MapNumber", StringComparison.OrdinalIgnoreCase) &&
+                     _mapIndexList.Count > 0)
+            {
+                var combo = new ComboBox
+                {
+                    ItemsSource = _mapIndexList,
+                    IsEditable = true,
+                    Margin = new Thickness(0, 6, 0, 0),
+                    Text = currentValue
+                };
+
+                combo.SelectionChanged += (_, _) =>
+                {
+                    ApplyRowValue(row, column.ColumnName, combo.Text);
+                };
+
+                combo.LostKeyboardFocus += (_, _) =>
+                {
+                    ApplyRowValue(row, column.ColumnName, combo.Text);
+                };
+
+                stack.Children.Add(combo);
+
+                if (int.TryParse(currentValue, out var mapIndex) && _mapNameByIndex.TryGetValue(mapIndex, out var mapName))
+                {
+                    stack.Children.Add(new TextBlock
+                    {
+                        Text = $"Map: {mapName}",
+                        Margin = new Thickness(0, 4, 0, 0),
+                        Foreground = System.Windows.Media.Brushes.DimGray,
+                        FontSize = 11
+                    });
+                }
+            }
+            else if (fileName.Equals("CustomMove.xml", StringComparison.OrdinalIgnoreCase) &&
+                     column.ColumnName.Equals("Map", StringComparison.OrdinalIgnoreCase) &&
+                     _mapIndexList.Count > 0)
+            {
+                var combo = new ComboBox
+                {
+                    ItemsSource = _mapIndexList,
+                    IsEditable = true,
+                    Margin = new Thickness(0, 6, 0, 0),
+                    Text = currentValue
+                };
+
+                combo.SelectionChanged += (_, _) =>
+                {
+                    ApplyRowValue(row, column.ColumnName, combo.Text);
+                };
+
+                combo.LostKeyboardFocus += (_, _) =>
+                {
+                    ApplyRowValue(row, column.ColumnName, combo.Text);
+                };
+
+                stack.Children.Add(combo);
+
+                if (int.TryParse(currentValue, out var mapIndex) && _mapNameByIndex.TryGetValue(mapIndex, out var mapName))
+                {
+                    stack.Children.Add(new TextBlock
+                    {
+                        Text = $"Map: {mapName}",
+                        Margin = new Thickness(0, 4, 0, 0),
+                        Foreground = System.Windows.Media.Brushes.DimGray,
+                        FontSize = 11
+                    });
+                }
+            }
+            else if (fileName.Equals("CustomNpcMove.xml", StringComparison.OrdinalIgnoreCase) &&
+                     (column.ColumnName.Equals("Map", StringComparison.OrdinalIgnoreCase) ||
+                      column.ColumnName.Equals("MoveMap", StringComparison.OrdinalIgnoreCase)) &&
+                     _mapIndexList.Count > 0)
+            {
+                var combo = new ComboBox
+                {
+                    ItemsSource = _mapIndexList,
+                    IsEditable = true,
+                    Margin = new Thickness(0, 6, 0, 0),
+                    Text = currentValue
+                };
+
+                combo.SelectionChanged += (_, _) =>
+                {
+                    ApplyRowValue(row, column.ColumnName, combo.Text);
+                };
+
+                combo.LostKeyboardFocus += (_, _) =>
+                {
+                    ApplyRowValue(row, column.ColumnName, combo.Text);
+                };
+
+                stack.Children.Add(combo);
+
+                if (int.TryParse(currentValue, out var mapIndex) && _mapNameByIndex.TryGetValue(mapIndex, out var mapName))
+                {
+                    stack.Children.Add(new TextBlock
+                    {
+                        Text = $"Map: {mapName}",
+                        Margin = new Thickness(0, 4, 0, 0),
+                        Foreground = System.Windows.Media.Brushes.DimGray,
+                        FontSize = 11
+                    });
+                }
+            }
+            else if (fileName.Equals("CustomNpcCommand.xml", StringComparison.OrdinalIgnoreCase) &&
+                     column.ColumnName.Equals("Map", StringComparison.OrdinalIgnoreCase) &&
                      _mapIndexList.Count > 0)
             {
                 var combo = new ComboBox
@@ -979,26 +1330,10 @@ public partial class MainWindow : Window
         _itemIndexSet.Clear();
         _itemNameByIndex.Clear();
 
-        var gatePath = Path.Combine(_dataRoot, "Move", "Gate.txt");
-
-        if (File.Exists(gatePath))
+        LoadGateIndexFromXml(Path.Combine(_dataRoot, "Move", "Gate.xml"));
+        if (_gateIndexList.Count == 0)
         {
-            foreach (var line in File.ReadLines(gatePath))
-            {
-                var text = line.Trim();
-
-                if (text.Length == 0 || text.StartsWith("//"))
-                {
-                    continue;
-                }
-
-                var firstToken = text.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-
-                if (int.TryParse(firstToken, out var gateIndex) && _gateIndexSet.Add(gateIndex))
-                {
-                    _gateIndexList.Add(gateIndex);
-                }
-            }
+            LoadGateIndexFromTxt(Path.Combine(_dataRoot, "Move", "Gate.txt"));
         }
 
         var mapManagerPath = Path.Combine(_dataRoot, "MapManager.txt");
@@ -1087,6 +1422,56 @@ public partial class MainWindow : Window
         }
     }
 
+    private void LoadGateIndexFromXml(string xmlPath)
+    {
+        if (File.Exists(xmlPath) == false)
+        {
+            return;
+        }
+
+        try
+        {
+            var doc = XDocument.Load(xmlPath);
+            var infoElements = doc.Root?.Elements("Info") ?? Enumerable.Empty<XElement>();
+
+            foreach (var info in infoElements)
+            {
+                if (TryInt(info, "Index", out var gateIndex) && _gateIndexSet.Add(gateIndex))
+                {
+                    _gateIndexList.Add(gateIndex);
+                }
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private void LoadGateIndexFromTxt(string txtPath)
+    {
+        if (File.Exists(txtPath) == false)
+        {
+            return;
+        }
+
+        foreach (var line in File.ReadLines(txtPath))
+        {
+            var text = line.Trim();
+
+            if (text.Length == 0 || text.StartsWith("//"))
+            {
+                continue;
+            }
+
+            var firstToken = text.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+
+            if (int.TryParse(firstToken, out var gateIndex) && _gateIndexSet.Add(gateIndex))
+            {
+                _gateIndexList.Add(gateIndex);
+            }
+        }
+    }
+
     private string GetFileGuide(string filePath)
     {
         var key = Path.GetFileName(filePath);
@@ -1155,7 +1540,7 @@ public partial class MainWindow : Window
             int.TryParse(fieldValue, out var gateValue) &&
             _gateIndexSet.Contains(gateValue) == false)
         {
-            description += " [WARN: не найден в Gate.txt]";
+            description += " [WARN: не найден в Gate.xml/Gate.txt]";
         }
 
         if (fileName.Equals("ItemDrop.xml", StringComparison.OrdinalIgnoreCase) &&
@@ -1164,6 +1549,31 @@ public partial class MainWindow : Window
             _mapNameByIndex.TryGetValue(mapValue, out var mapName))
         {
             description += $" [Map: {mapName}]";
+        }
+
+        if (fileName.Equals("CustomMove.xml", StringComparison.OrdinalIgnoreCase) &&
+            fieldName.Equals("Map", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(fieldValue, out var customMapValue) &&
+            _mapNameByIndex.TryGetValue(customMapValue, out var customMapName))
+        {
+            description += $" [Map: {customMapName}]";
+        }
+
+        if (fileName.Equals("CustomNpcMove.xml", StringComparison.OrdinalIgnoreCase) &&
+            (fieldName.Equals("Map", StringComparison.OrdinalIgnoreCase) ||
+             fieldName.Equals("MoveMap", StringComparison.OrdinalIgnoreCase)) &&
+            int.TryParse(fieldValue, out var npcMapValue) &&
+            _mapNameByIndex.TryGetValue(npcMapValue, out var npcMapName))
+        {
+            description += $" [Map: {npcMapName}]";
+        }
+
+        if (fileName.Equals("CustomNpcCommand.xml", StringComparison.OrdinalIgnoreCase) &&
+            fieldName.Equals("Map", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(fieldValue, out var npcCommandMapValue) &&
+            _mapNameByIndex.TryGetValue(npcCommandMapValue, out var npcCommandMapName))
+        {
+            description += $" [Map: {npcCommandMapName}]";
         }
 
         if ((fileName.Equals("ItemDrop.xml", StringComparison.OrdinalIgnoreCase) ||
@@ -1194,8 +1604,230 @@ public partial class MainWindow : Window
         {
             ValidateItemDrop(document, errors);
         }
+        else if (fileName.Equals("MoveSummon.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateMoveSummon(document, errors);
+        }
+        else if (fileName.Equals("CustomMove.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateCustomMove(document, errors);
+        }
+        else if (fileName.Equals("CustomNpcMove.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateCustomNpcMove(document, errors);
+        }
+        else if (fileName.Equals("CustomNpcCommand.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateCustomNpcCommand(document, errors);
+        }
+        else if (fileName.Equals("CustomCommandDescription.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateCustomCommandDescription(document, errors);
+        }
+        else if (fileName.Equals("CustomRanking.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateCustomRanking(document, errors);
+        }
+        else if (fileName.Equals("CustomRankUser.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateCustomRankUser(document, errors);
+        }
+        else if (fileName.Equals("Gate.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateGate(document, errors);
+        }
+
+        ValidateCrossFileDependencies(document, fileName, errors);
 
         return errors;
+    }
+
+    private void ValidateCrossFileDependencies(XDocument document, string fileName, List<string> errors)
+    {
+        if (fileName.Equals("MoveSummon.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var info in document.Root?.Elements("Info") ?? Enumerable.Empty<XElement>())
+            {
+                if (TryInt(info, "Map", out var map) &&
+                    map != -1 &&
+                    _mapIndexSet.Count > 0 &&
+                    _mapIndexSet.Contains(map) == false)
+                {
+                    errors.Add($"MoveSummon[{map}]: Map not found in MapManager.txt");
+                }
+            }
+        }
+        else if (fileName.Equals("CustomMove.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var info in document.Root?.Elements("Info") ?? Enumerable.Empty<XElement>())
+            {
+                if (TryInt(info, "Index", out var index) == false)
+                {
+                    continue;
+                }
+
+                if (TryInt(info, "Map", out var map) &&
+                    map != -1 &&
+                    _mapIndexSet.Count > 0 &&
+                    _mapIndexSet.Contains(map) == false)
+                {
+                    errors.Add($"CustomMove[{index}]: Map={map} not found in MapManager.txt");
+                }
+            }
+        }
+        else if (fileName.Equals("CustomNpcMove.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var info in document.Root?.Elements("Info") ?? Enumerable.Empty<XElement>())
+            {
+                if (TryInt(info, "Index", out var index) == false)
+                {
+                    continue;
+                }
+
+                if (TryInt(info, "Map", out var map) &&
+                    map != -1 &&
+                    _mapIndexSet.Count > 0 &&
+                    _mapIndexSet.Contains(map) == false)
+                {
+                    errors.Add($"CustomNpcMove[{index}]: Map={map} not found in MapManager.txt");
+                }
+
+                if (TryInt(info, "MoveMap", out var moveMap) &&
+                    moveMap != -1 &&
+                    _mapIndexSet.Count > 0 &&
+                    _mapIndexSet.Contains(moveMap) == false)
+                {
+                    errors.Add($"CustomNpcMove[{index}]: MoveMap={moveMap} not found in MapManager.txt");
+                }
+            }
+        }
+        else if (fileName.Equals("CustomNpcCommand.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var info in document.Root?.Elements("Info") ?? Enumerable.Empty<XElement>())
+            {
+                if (TryInt(info, "Index", out var index) == false)
+                {
+                    continue;
+                }
+
+                if (TryInt(info, "Map", out var map) &&
+                    map != -1 &&
+                    _mapIndexSet.Count > 0 &&
+                    _mapIndexSet.Contains(map) == false)
+                {
+                    errors.Add($"CustomNpcCommand[{index}]: Map={map} not found in MapManager.txt");
+                }
+            }
+        }
+        else if (fileName.Equals("ItemDrop.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var info in document.Root?.Elements("Info") ?? Enumerable.Empty<XElement>())
+            {
+                if (TryInt(info, "Index", out var index) == false)
+                {
+                    continue;
+                }
+
+                if (TryInt(info, "MapNumber", out var map) &&
+                    map != -1 &&
+                    _mapIndexSet.Count > 0 &&
+                    _mapIndexSet.Contains(map) == false)
+                {
+                    errors.Add($"ItemDrop[{index}]: MapNumber={map} not found in MapManager.txt");
+                }
+            }
+        }
+    }
+
+    private void SynchronizeDependencies(bool reloadCurrentFile)
+    {
+        try
+        {
+            LoadDependencyData();
+
+            var filesToValidate = _readyXmlRelativePaths
+                .Select(relative => Path.Combine(_dataRoot, relative))
+                .ToList();
+
+            var scanned = 0;
+            var warnings = new List<string>();
+
+            foreach (var filePath in filesToValidate)
+            {
+                if (File.Exists(filePath) == false)
+                {
+                    continue;
+                }
+
+                scanned++;
+                var doc = XDocument.Load(filePath);
+                var fileWarnings = ValidateDocument(doc, Path.GetFileName(filePath));
+
+                foreach (var warning in fileWarnings)
+                {
+                    warnings.Add($"{Path.GetFileName(filePath)}: {warning}");
+                }
+            }
+
+            var mirrored = MirrorReadyXmlFiles(filesToValidate);
+
+            if (reloadCurrentFile &&
+                string.IsNullOrWhiteSpace(_currentFilePath) == false &&
+                File.Exists(_currentFilePath))
+            {
+                LoadXmlFile(_currentFilePath);
+            }
+
+            if (warnings.Count == 0)
+            {
+                StatusText.Text = $"Sync OK: {scanned} files, mirrored: {mirrored}";
+            }
+            else
+            {
+                StatusText.Text = $"Sync warning: {warnings.Count}";
+                MessageBox.Show(string.Join(Environment.NewLine, warnings.Take(30)), "Dependency Sync", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Sync error: {ex.Message}";
+            MessageBox.Show(ex.Message, "Dependency Sync", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private int MirrorReadyXmlFiles(IEnumerable<string> sourceFiles)
+    {
+        var readyRoot = ResolveReadyXmlRoot();
+        var copied = 0;
+
+        foreach (var source in sourceFiles)
+        {
+            if (File.Exists(source) == false)
+            {
+                continue;
+            }
+
+            var relativePath = Path.GetRelativePath(_dataRoot, source);
+            var destination = Path.Combine(readyRoot, relativePath);
+            var destinationDir = Path.GetDirectoryName(destination);
+
+            if (string.IsNullOrWhiteSpace(destinationDir) == false)
+            {
+                Directory.CreateDirectory(destinationDir);
+            }
+
+            File.Copy(source, destination, true);
+            copied++;
+        }
+
+        return copied;
+    }
+
+    private string ResolveReadyXmlRoot()
+    {
+        var dataDirectory = new DirectoryInfo(_dataRoot);
+        var gameServerRoot = dataDirectory.Parent?.FullName ?? _dataRoot;
+        return Path.Combine(gameServerRoot, ReadyXmlFolderName);
     }
 
     private static List<XElement> ResolveRecordElements(XDocument document, string fileName)
@@ -1212,7 +1844,19 @@ public partial class MainWindow : Window
             return root.Elements("info").ToList();
         }
 
+        if (fileName.Equals("Gate.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            return root.Elements("Info").ToList();
+        }
+
         if (fileName.Equals("ItemMove.xml", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Equals("MoveSummon.xml", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Equals("CustomMove.xml", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Equals("CustomNpcMove.xml", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Equals("CustomNpcCommand.xml", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Equals("CustomCommandDescription.xml", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Equals("CustomRanking.xml", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Equals("CustomRankUser.xml", StringComparison.OrdinalIgnoreCase) ||
             fileName.Equals("ItemDrop.xml", StringComparison.OrdinalIgnoreCase))
         {
             return root.Elements("Info").ToList();
@@ -1269,7 +1913,7 @@ public partial class MainWindow : Window
 
             if (gate >= 0 && _gateIndexSet.Count > 0 && _gateIndexSet.Contains(gate) == false)
             {
-                errors.Add($"Move[{index}]: Gate={gate} not found in Gate.txt");
+                errors.Add($"Move[{index}]: Gate={gate} not found in Gate.xml/Gate.txt");
             }
 
             if (maxLevel != -1 && minLevel != -1 && minLevel > maxLevel)
@@ -1338,6 +1982,435 @@ public partial class MainWindow : Window
             if (maxLevel != -1 && minLevel != -1 && minLevel > maxLevel)
             {
                 errors.Add($"ItemDrop[{index}]: MonsterLevelMin > MonsterLevelMax");
+            }
+        }
+    }
+
+    private static void ValidateMoveSummon(XDocument document, List<string> errors)
+    {
+        var infoList = document.Root?.Elements("Info").ToList() ?? new List<XElement>();
+
+        foreach (var info in infoList)
+        {
+            if (TryInt(info, "Map", out var map) == false)
+            {
+                errors.Add("MoveSummon: invalid Map");
+                continue;
+            }
+
+            TryInt(info, "X", out var x);
+            TryInt(info, "Y", out var y);
+            TryInt(info, "TX", out var tx);
+            TryInt(info, "TY", out var ty);
+            TryInt(info, "MinLevel", out var minLevel);
+            TryInt(info, "MaxLevel", out var maxLevel);
+            TryInt(info, "MinReset", out var minReset);
+            TryInt(info, "MaxReset", out var maxReset);
+            TryInt(info, "PkMove", out var pkMove);
+
+            if (map < 0)
+            {
+                errors.Add("MoveSummon: Map < 0");
+            }
+
+            if (x < 0 || y < 0 || tx < 0 || ty < 0)
+            {
+                errors.Add($"MoveSummon[{map}]: negative coordinate");
+            }
+
+            if (x > tx || y > ty)
+            {
+                errors.Add($"MoveSummon[{map}]: invalid area range");
+            }
+
+            if (maxLevel != -1 && minLevel != -1 && minLevel > maxLevel)
+            {
+                errors.Add($"MoveSummon[{map}]: MinLevel > MaxLevel");
+            }
+
+            if (maxReset != -1 && minReset != -1 && minReset > maxReset)
+            {
+                errors.Add($"MoveSummon[{map}]: MinReset > MaxReset");
+            }
+
+            if (pkMove is not (0 or 1))
+            {
+                errors.Add($"MoveSummon[{map}]: invalid PkMove");
+            }
+        }
+    }
+
+    private static void ValidateCustomMove(XDocument document, List<string> errors)
+    {
+        var infoList = document.Root?.Elements("Info").ToList() ?? new List<XElement>();
+        var indices = new HashSet<int>();
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var info in infoList)
+        {
+            if (TryInt(info, "Index", out var index) == false)
+            {
+                errors.Add("CustomMove: invalid Index");
+                continue;
+            }
+
+            if (indices.Add(index) == false)
+            {
+                errors.Add($"CustomMove: duplicate Index={index}");
+            }
+
+            var name = info.Attribute("Name")?.Value ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                errors.Add($"CustomMove[{index}]: empty Name");
+            }
+            else if (names.Add(name) == false)
+            {
+                errors.Add($"CustomMove: duplicate Name={name}");
+            }
+
+            TryInt(info, "Map", out var map);
+            TryInt(info, "X", out var x);
+            TryInt(info, "Y", out var y);
+            TryInt(info, "MinLevel", out var minLevel);
+            TryInt(info, "MaxLevel", out var maxLevel);
+            TryInt(info, "MinReset", out var minReset);
+            TryInt(info, "MaxReset", out var maxReset);
+            TryInt(info, "MinMReset", out var minMReset);
+            TryInt(info, "MaxMReset", out var maxMReset);
+            TryInt(info, "PkMove", out var pkMove);
+
+            if (map < 0)
+            {
+                errors.Add($"CustomMove[{index}]: Map < 0");
+            }
+
+            if (x < 0 || y < 0)
+            {
+                errors.Add($"CustomMove[{index}]: negative coordinate");
+            }
+
+            if (maxLevel != -1 && minLevel != -1 && minLevel > maxLevel)
+            {
+                errors.Add($"CustomMove[{index}]: MinLevel > MaxLevel");
+            }
+
+            if (maxReset != -1 && minReset != -1 && minReset > maxReset)
+            {
+                errors.Add($"CustomMove[{index}]: MinReset > MaxReset");
+            }
+
+            if (maxMReset != -1 && minMReset != -1 && minMReset > maxMReset)
+            {
+                errors.Add($"CustomMove[{index}]: MinMReset > MaxMReset");
+            }
+
+            if (pkMove is not (0 or 1))
+            {
+                errors.Add($"CustomMove[{index}]: invalid PkMove");
+            }
+        }
+    }
+
+    private static void ValidateCustomNpcMove(XDocument document, List<string> errors)
+    {
+        var infoList = document.Root?.Elements("Info").ToList() ?? new List<XElement>();
+        var indices = new HashSet<int>();
+
+        foreach (var info in infoList)
+        {
+            if (TryInt(info, "Index", out var index) == false)
+            {
+                errors.Add("CustomNpcMove: invalid Index");
+                continue;
+            }
+
+            if (indices.Add(index) == false)
+            {
+                errors.Add($"CustomNpcMove: duplicate Index={index}");
+            }
+
+            TryInt(info, "MonsterClass", out var monsterClass);
+            TryInt(info, "Map", out var map);
+            TryInt(info, "X", out var x);
+            TryInt(info, "Y", out var y);
+            TryInt(info, "MoveMap", out var moveMap);
+            TryInt(info, "MoveX", out var moveX);
+            TryInt(info, "MoveY", out var moveY);
+            TryInt(info, "MinLevel", out var minLevel);
+            TryInt(info, "MaxLevel", out var maxLevel);
+            TryInt(info, "MinReset", out var minReset);
+            TryInt(info, "MaxReset", out var maxReset);
+            TryInt(info, "MinMReset", out var minMReset);
+            TryInt(info, "MaxMReset", out var maxMReset);
+            TryInt(info, "PkMove", out var pkMove);
+
+            if (monsterClass < 0)
+            {
+                errors.Add($"CustomNpcMove[{index}]: MonsterClass < 0");
+            }
+
+            if (map < 0 || moveMap < 0)
+            {
+                errors.Add($"CustomNpcMove[{index}]: Map/MoveMap < 0");
+            }
+
+            if (x < 0 || y < 0 || moveX < 0 || moveY < 0)
+            {
+                errors.Add($"CustomNpcMove[{index}]: negative coordinate");
+            }
+
+            if (maxLevel != -1 && minLevel != -1 && minLevel > maxLevel)
+            {
+                errors.Add($"CustomNpcMove[{index}]: MinLevel > MaxLevel");
+            }
+
+            if (maxReset != -1 && minReset != -1 && minReset > maxReset)
+            {
+                errors.Add($"CustomNpcMove[{index}]: MinReset > MaxReset");
+            }
+
+            if (maxMReset != -1 && minMReset != -1 && minMReset > maxMReset)
+            {
+                errors.Add($"CustomNpcMove[{index}]: MinMReset > MaxMReset");
+            }
+
+            if (pkMove is not (0 or 1))
+            {
+                errors.Add($"CustomNpcMove[{index}]: invalid PkMove");
+            }
+        }
+    }
+
+    private static void ValidateCustomNpcCommand(XDocument document, List<string> errors)
+    {
+        var infoList = document.Root?.Elements("Info").ToList() ?? new List<XElement>();
+        var indices = new HashSet<int>();
+
+        foreach (var info in infoList)
+        {
+            if (TryInt(info, "Index", out var index) == false)
+            {
+                errors.Add("CustomNpcCommand: invalid Index");
+                continue;
+            }
+
+            if (indices.Add(index) == false)
+            {
+                errors.Add($"CustomNpcCommand: duplicate Index={index}");
+            }
+
+            TryInt(info, "MonsterClass", out var monsterClass);
+            TryInt(info, "Map", out var map);
+            TryInt(info, "X", out var x);
+            TryInt(info, "Y", out var y);
+            TryInt(info, "Talk", out var talk);
+
+            var command = info.Attribute("Command")?.Value ?? string.Empty;
+
+            if (monsterClass < 0)
+            {
+                errors.Add($"CustomNpcCommand[{index}]: MonsterClass < 0");
+            }
+
+            if (map < 0)
+            {
+                errors.Add($"CustomNpcCommand[{index}]: Map < 0");
+            }
+
+            if (x < 0 || y < 0)
+            {
+                errors.Add($"CustomNpcCommand[{index}]: negative coordinate");
+            }
+
+            if (talk is not (0 or 1))
+            {
+                errors.Add($"CustomNpcCommand[{index}]: invalid Talk");
+            }
+
+            if (string.IsNullOrWhiteSpace(command))
+            {
+                errors.Add($"CustomNpcCommand[{index}]: empty Command");
+            }
+        }
+    }
+
+    private static void ValidateCustomCommandDescription(XDocument document, List<string> errors)
+    {
+        var infoList = document.Root?.Elements("Info").ToList() ?? new List<XElement>();
+        var indices = new HashSet<int>();
+        var commands = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var info in infoList)
+        {
+            if (TryInt(info, "Index", out var index) == false)
+            {
+                errors.Add("CustomCommandDescription: invalid Index");
+                continue;
+            }
+
+            if (indices.Add(index) == false)
+            {
+                errors.Add($"CustomCommandDescription: duplicate Index={index}");
+            }
+
+            var command = info.Attribute("Command")?.Value ?? string.Empty;
+            var description = info.Attribute("Description")?.Value ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(command))
+            {
+                errors.Add($"CustomCommandDescription[{index}]: empty Command");
+            }
+            else if (commands.Add(command) == false)
+            {
+                errors.Add($"CustomCommandDescription: duplicate Command={command}");
+            }
+
+            if (string.IsNullOrWhiteSpace(description))
+            {
+                errors.Add($"CustomCommandDescription[{index}]: empty Description");
+            }
+        }
+    }
+
+    private static void ValidateCustomRanking(XDocument document, List<string> errors)
+    {
+        var infoList = document.Root?.Elements("Info").ToList() ?? new List<XElement>();
+        var indices = new HashSet<int>();
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var info in infoList)
+        {
+            if (TryInt(info, "Index", out var index) == false)
+            {
+                errors.Add("CustomRanking: invalid Index");
+                continue;
+            }
+
+            if (indices.Add(index) == false)
+            {
+                errors.Add($"CustomRanking: duplicate Index={index}");
+            }
+
+            var name = info.Attribute("Name")?.Value ?? string.Empty;
+            var col1 = info.Attribute("Col1")?.Value ?? string.Empty;
+            var col2 = info.Attribute("Col2")?.Value ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                errors.Add($"CustomRanking[{index}]: empty Name");
+            }
+            else if (names.Add(name) == false)
+            {
+                errors.Add($"CustomRanking: duplicate Name={name}");
+            }
+
+            if (string.IsNullOrWhiteSpace(col1))
+            {
+                errors.Add($"CustomRanking[{index}]: empty Col1");
+            }
+
+            if (string.IsNullOrWhiteSpace(col2))
+            {
+                errors.Add($"CustomRanking[{index}]: empty Col2");
+            }
+        }
+    }
+
+    private static void ValidateCustomRankUser(XDocument document, List<string> errors)
+    {
+        var infoList = document.Root?.Elements("Info").ToList() ?? new List<XElement>();
+        var indices = new HashSet<int>();
+
+        foreach (var info in infoList)
+        {
+            if (TryInt(info, "Index", out var index) == false)
+            {
+                errors.Add("CustomRankUser: invalid Index");
+                continue;
+            }
+
+            if (indices.Add(index) == false)
+            {
+                errors.Add($"CustomRankUser: duplicate Index={index}");
+            }
+
+            var name = info.Attribute("Name")?.Value ?? string.Empty;
+            TryInt(info, "ResetMin", out var resetMin);
+            TryInt(info, "ResetMax", out var resetMax);
+            TryInt(info, "Coin1", out var coin1);
+            TryInt(info, "Coin2", out var coin2);
+            TryInt(info, "Coin3", out var coin3);
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                errors.Add($"CustomRankUser[{index}]: empty Name");
+            }
+
+            if (resetMax != -1 && resetMin > resetMax)
+            {
+                errors.Add($"CustomRankUser[{index}]: ResetMin > ResetMax");
+            }
+
+            if (coin1 < 0 || coin2 < 0 || coin3 < 0)
+            {
+                errors.Add($"CustomRankUser[{index}]: negative Coin reward");
+            }
+        }
+    }
+
+    private static void ValidateGate(XDocument document, List<string> errors)
+    {
+        var infoList = document.Root?.Elements("Info").ToList() ?? new List<XElement>();
+        var indices = new HashSet<int>();
+
+        foreach (var info in infoList)
+        {
+            if (TryInt(info, "Index", out var index) == false)
+            {
+                errors.Add("Gate: invalid Index");
+                continue;
+            }
+
+            if (indices.Add(index) == false)
+            {
+                errors.Add($"Gate: duplicate Index={index}");
+            }
+
+            TryInt(info, "Map", out var map);
+            TryInt(info, "X", out var x);
+            TryInt(info, "Y", out var y);
+            TryInt(info, "TX", out var tx);
+            TryInt(info, "TY", out var ty);
+            TryInt(info, "TargetGate", out var targetGate);
+            TryInt(info, "MinLevel", out var minLevel);
+            TryInt(info, "MaxLevel", out var maxLevel);
+            TryInt(info, "MinReset", out var minReset);
+            TryInt(info, "MaxReset", out var maxReset);
+
+            if (map < 0)
+            {
+                errors.Add($"Gate[{index}]: Map < 0");
+            }
+
+            if (x < 0 || y < 0 || tx < 0 || ty < 0)
+            {
+                errors.Add($"Gate[{index}]: negative coordinate");
+            }
+
+            if (targetGate < 0)
+            {
+                errors.Add($"Gate[{index}]: TargetGate < 0");
+            }
+
+            if (maxLevel != -1 && minLevel != -1 && minLevel > maxLevel)
+            {
+                errors.Add($"Gate[{index}]: MinLevel > MaxLevel");
+            }
+
+            if (maxReset != -1 && minReset != -1 && minReset > maxReset)
+            {
+                errors.Add($"Gate[{index}]: MinReset > MaxReset");
             }
         }
     }

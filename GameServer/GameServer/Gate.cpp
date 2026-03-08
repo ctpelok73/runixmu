@@ -7,6 +7,7 @@
 #include "DefaultClassInfo.h"
 #include "Map.h"
 #include "MemScript.h"
+#include "Log.h"
 #include "Util.h"
 
 CGate gGate;
@@ -26,6 +27,76 @@ CGate::~CGate() // OK
 
 void CGate::Load(char* path) // OK
 {
+	char xmlPath[MAX_PATH] = { 0 };
+	const char* sourcePath = path;
+	bool loadXml = false;
+	const char* ext = strrchr(path, '.');
+
+	if (ext != 0 && _stricmp(ext, ".xml") == 0)
+	{
+		loadXml = true;
+	}
+	else if (ext != 0 && _stricmp(ext, ".txt") == 0)
+	{
+		strcpy_s(xmlPath, path);
+		char* xmlExt = strrchr(xmlPath, '.');
+
+		if (xmlExt != 0)
+		{
+			strcpy_s(xmlExt, 5, ".xml");
+			FILE* file = 0;
+
+			if (fopen_s(&file, xmlPath, "r") == 0 && file != 0)
+			{
+				fclose(file);
+				sourcePath = xmlPath;
+				loadXml = true;
+			}
+		}
+	}
+
+	if (loadXml != 0)
+	{
+		pugi::xml_document file;
+		pugi::xml_parse_result res = file.load_file(sourcePath);
+
+		if (res.status != pugi::status_ok)
+		{
+			ErrorMessageBox("Error load fail: %s", sourcePath);
+			return;
+		}
+
+		this->m_GateInfo.clear();
+
+		pugi::xml_node root = file.child("Gate");
+
+		for (pugi::xml_node leaf = root.child("Info"); leaf; leaf = leaf.next_sibling("Info"))
+		{
+			GATE_INFO info;
+
+			info.Index = leaf.attribute("Index").as_int();
+			info.Flag = leaf.attribute("Flag").as_int();
+			info.Map = leaf.attribute("Map").as_int();
+			info.X = leaf.attribute("X").as_int();
+			info.Y = leaf.attribute("Y").as_int();
+			info.TX = leaf.attribute("TX").as_int();
+			info.TY = leaf.attribute("TY").as_int();
+			info.TargetGate = leaf.attribute("TargetGate").as_int();
+			info.Dir = leaf.attribute("Dir").as_int();
+			info.MinLevel = leaf.attribute("MinLevel").as_int();
+			info.MaxLevel = leaf.attribute("MaxLevel").as_int();
+			info.MinReset = leaf.attribute("MinReset").as_int();
+			info.MaxReset = leaf.attribute("MaxReset").as_int();
+			info.AccountLevel = leaf.attribute("AccountLevel").as_int();
+
+			this->m_GateInfo.insert(type_map_gate::value_type(info.Index, info));
+		}
+
+		LogAdd(LOG_BLUE, "[XML] Gate loaded successfully (%d records) [%s]", (int)this->m_GateInfo.size(), sourcePath);
+
+		return;
+	}
+
 	CMemScript* lpMemScript = new CMemScript;
 
 	if(lpMemScript == 0)
@@ -95,11 +166,53 @@ void CGate::Load(char* path) // OK
 		ErrorMessageBox(lpMemScript->GetLastError());
 	}
 
+	LogAdd(LOG_BLUE, "[TXT] Gate loaded successfully (%d records) [%s]", (int)this->m_GateInfo.size(), path);
+
 	delete lpMemScript;
 }
 
 void CGate::ExportXML(std::string filename)
 {
+	pugi::xml_document doc;
+
+	pugi::xml_node root = doc.append_child("Gate");
+
+	for (type_map_gate::iterator it = m_GateInfo.begin(); it != m_GateInfo.end(); it++)
+	{
+		GATE_INFO* s = &it->second;
+
+		pugi::xml_node leaf = root.append_child("Info");
+
+		leaf.append_attribute("Index").set_value(s->Index);
+
+		leaf.append_attribute("Flag").set_value(s->Flag);
+
+		leaf.append_attribute("Map").set_value(s->Map);
+
+		leaf.append_attribute("X").set_value(s->X);
+
+		leaf.append_attribute("Y").set_value(s->Y);
+
+		leaf.append_attribute("TX").set_value(s->TX);
+
+		leaf.append_attribute("TY").set_value(s->TY);
+
+		leaf.append_attribute("TargetGate").set_value(s->TargetGate);
+
+		leaf.append_attribute("Dir").set_value(s->Dir);
+
+		leaf.append_attribute("MinLevel").set_value(s->MinLevel);
+
+		leaf.append_attribute("MaxLevel").set_value(s->MaxLevel);
+
+		leaf.append_attribute("MinReset").set_value(s->MinReset);
+
+		leaf.append_attribute("MaxReset").set_value(s->MaxReset);
+
+		leaf.append_attribute("AccountLevel").set_value(s->AccountLevel);
+	}
+
+	doc.save_file(filename.c_str());
 }
 
 void CGate::ExportBMD(std::string filename)

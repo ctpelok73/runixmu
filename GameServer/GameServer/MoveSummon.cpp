@@ -10,6 +10,7 @@
 #include "ItemManager.h"
 #include "Map.h"
 #include "MemScript.h"
+#include "Log.h"
 #include "Util.h"
 
 CMoveSummon gMoveSummon;
@@ -29,6 +30,73 @@ CMoveSummon::~CMoveSummon() // OK
 
 void CMoveSummon::Load(char* path) // OK
 {
+	char xmlPath[MAX_PATH] = { 0 };
+	const char* sourcePath = path;
+	bool loadXml = false;
+	const char* ext = strrchr(path, '.');
+
+	if (ext != 0 && _stricmp(ext, ".xml") == 0)
+	{
+		loadXml = true;
+	}
+	else if (ext != 0 && _stricmp(ext, ".txt") == 0)
+	{
+		strcpy_s(xmlPath, path);
+		char* xmlExt = strrchr(xmlPath, '.');
+
+		if (xmlExt != 0)
+		{
+			strcpy_s(xmlExt, 5, ".xml");
+			FILE* file = 0;
+
+			if (fopen_s(&file, xmlPath, "r") == 0 && file != 0)
+			{
+				fclose(file);
+				sourcePath = xmlPath;
+				loadXml = true;
+			}
+		}
+	}
+
+	if (loadXml != 0)
+	{
+		pugi::xml_document file;
+		pugi::xml_parse_result res = file.load_file(sourcePath);
+
+		if (res.status != pugi::status_ok)
+		{
+			ErrorMessageBox("Error load fail: %s", sourcePath);
+			return;
+		}
+
+		this->m_MoveSummonInfo.clear();
+
+		pugi::xml_node root = file.child("MoveSummon");
+
+		for (pugi::xml_node leaf = root.child("Info"); leaf; leaf = leaf.next_sibling("Info"))
+		{
+			MOVE_SUMMON_INFO info;
+
+			info.Map = leaf.attribute("Map").as_int();
+			info.X = leaf.attribute("X").as_int();
+			info.Y = leaf.attribute("Y").as_int();
+			info.TX = leaf.attribute("TX").as_int();
+			info.TY = leaf.attribute("TY").as_int();
+			info.MinLevel = leaf.attribute("MinLevel").as_int();
+			info.MaxLevel = leaf.attribute("MaxLevel").as_int();
+			info.MinReset = leaf.attribute("MinReset").as_int();
+			info.MaxReset = leaf.attribute("MaxReset").as_int();
+			info.AccountLevel = leaf.attribute("AccountLevel").as_int();
+			info.PkMove = leaf.attribute("PkMove").as_int();
+
+			this->m_MoveSummonInfo.push_back(info);
+		}
+
+		LogAdd(LOG_BLUE, "[XML] MoveSummon loaded successfully (%d records) [%s]", (int)this->m_MoveSummonInfo.size(), sourcePath);
+
+		return;
+	}
+
 	CMemScript* lpMemScript = new CMemScript;
 
 	if(lpMemScript == 0)
@@ -91,6 +159,8 @@ void CMoveSummon::Load(char* path) // OK
 	{
 		ErrorMessageBox(lpMemScript->GetLastError());
 	}
+
+	LogAdd(LOG_BLUE, "[TXT] MoveSummon loaded successfully (%d records) [%s]", (int)this->m_MoveSummonInfo.size(), path);
 
 	delete lpMemScript;
 }

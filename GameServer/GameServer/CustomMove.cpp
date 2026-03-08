@@ -31,6 +31,75 @@ CCustomMove::~CCustomMove() // OK
 
 void CCustomMove::Load(char* path) // OK
 {
+	char xmlPath[MAX_PATH] = { 0 };
+	const char* sourcePath = path;
+	bool loadXml = false;
+	const char* ext = strrchr(path, '.');
+
+	if (ext != 0 && _stricmp(ext, ".xml") == 0)
+	{
+		loadXml = true;
+	}
+	else if (ext != 0 && _stricmp(ext, ".txt") == 0)
+	{
+		strcpy_s(xmlPath, path);
+		char* xmlExt = strrchr(xmlPath, '.');
+
+		if (xmlExt != 0)
+		{
+			strcpy_s(xmlExt, 5, ".xml");
+			FILE* file = 0;
+
+			if (fopen_s(&file, xmlPath, "r") == 0 && file != 0)
+			{
+				fclose(file);
+				sourcePath = xmlPath;
+				loadXml = true;
+			}
+		}
+	}
+
+	if (loadXml != 0)
+	{
+		pugi::xml_document file;
+		pugi::xml_parse_result res = file.load_file(sourcePath);
+
+		if (res.status != pugi::status_ok)
+		{
+			ErrorMessageBox("Error load fail: %s", sourcePath);
+			return;
+		}
+
+		this->m_CustomMoveInfo.clear();
+
+		pugi::xml_node root = file.child("CustomMove");
+
+		for (pugi::xml_node leaf = root.child("Info"); leaf; leaf = leaf.next_sibling("Info"))
+		{
+			CUSTOMMOVE_INFO info;
+
+			info.Index = leaf.attribute("Index").as_int();
+			strcpy_s(info.Name, leaf.attribute("Name").as_string());
+			info.Map = leaf.attribute("Map").as_int();
+			info.X = leaf.attribute("X").as_int();
+			info.Y = leaf.attribute("Y").as_int();
+			info.MinLevel = leaf.attribute("MinLevel").as_int();
+			info.MaxLevel = leaf.attribute("MaxLevel").as_int();
+			info.MinReset = leaf.attribute("MinReset").as_int();
+			info.MaxReset = leaf.attribute("MaxReset").as_int();
+			info.MinMReset = leaf.attribute("MinMReset").as_int();
+			info.MaxMReset = leaf.attribute("MaxMReset").as_int();
+			info.AccountLevel = leaf.attribute("AccountLevel").as_int();
+			info.PkMove = leaf.attribute("PkMove").as_int();
+
+			this->m_CustomMoveInfo.insert(std::pair<int,CUSTOMMOVE_INFO>(info.Index,info));
+		}
+
+		LogAdd(LOG_BLUE, "[XML] CustomMove loaded successfully (%d records) [%s]", (int)this->m_CustomMoveInfo.size(), sourcePath);
+
+		return;
+	}
+
 	CMemScript* lpMemScript = new CMemScript;
 
 	if(lpMemScript == 0)
@@ -97,6 +166,8 @@ void CCustomMove::Load(char* path) // OK
 	{
 		ErrorMessageBox(lpMemScript->GetLastError());
 	}
+
+	LogAdd(LOG_BLUE, "[TXT] CustomMove loaded successfully (%d records) [%s]", (int)this->m_CustomMoveInfo.size(), path);
 
 	delete lpMemScript;
 }

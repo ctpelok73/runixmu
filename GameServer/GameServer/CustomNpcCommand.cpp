@@ -9,6 +9,7 @@
 #include "Notice.h"
 #include "NpcTalk.h"
 #include "Path.h"
+#include "Log.h"
 #include "Util.h"
 
 CCustomNpcCommand gCustomNpcCommand;
@@ -28,6 +29,69 @@ CCustomNpcCommand::~CCustomNpcCommand() // OK
 
 void CCustomNpcCommand::Load(char* path) // OK
 {
+	char xmlPath[MAX_PATH] = { 0 };
+	const char* sourcePath = path;
+	bool loadXml = false;
+	const char* ext = strrchr(path, '.');
+
+	if (ext != 0 && _stricmp(ext, ".xml") == 0)
+	{
+		loadXml = true;
+	}
+	else if (ext != 0 && _stricmp(ext, ".txt") == 0)
+	{
+		strcpy_s(xmlPath, path);
+		char* xmlExt = strrchr(xmlPath, '.');
+
+		if (xmlExt != 0)
+		{
+			strcpy_s(xmlExt, 5, ".xml");
+			FILE* file = 0;
+
+			if (fopen_s(&file, xmlPath, "r") == 0 && file != 0)
+			{
+				fclose(file);
+				sourcePath = xmlPath;
+				loadXml = true;
+			}
+		}
+	}
+
+	if (loadXml != 0)
+	{
+		pugi::xml_document file;
+		pugi::xml_parse_result res = file.load_file(sourcePath);
+
+		if (res.status != pugi::status_ok)
+		{
+			ErrorMessageBox("Error load fail: %s", sourcePath);
+			return;
+		}
+
+		this->m_CustomNpcCommand.clear();
+
+		pugi::xml_node root = file.child("CustomNpcCommand");
+
+		for (pugi::xml_node leaf = root.child("Info"); leaf; leaf = leaf.next_sibling("Info"))
+		{
+			NPC_TYPE_INFO info;
+
+			info.Index = leaf.attribute("Index").as_int();
+			info.MonsterClass = leaf.attribute("MonsterClass").as_int();
+			info.Map = leaf.attribute("Map").as_int();
+			info.X = leaf.attribute("X").as_int();
+			info.Y = leaf.attribute("Y").as_int();
+			info.Talk = leaf.attribute("Talk").as_int();
+			strcpy_s(info.Command, leaf.attribute("Command").as_string());
+
+			this->m_CustomNpcCommand.insert(std::pair<int,NPC_TYPE_INFO>(info.Index,info));
+		}
+
+		LogAdd(LOG_BLUE, "[XML] CustomNpcCommand loaded successfully (%d records) [%s]", (int)this->m_CustomNpcCommand.size(), sourcePath);
+
+		return;
+	}
+
 	CMemScript* lpMemScript = new CMemScript;
 
 	if(lpMemScript == 0)
@@ -82,6 +146,8 @@ void CCustomNpcCommand::Load(char* path) // OK
 	{
 		ErrorMessageBox(lpMemScript->GetLastError());
 	}
+
+	LogAdd(LOG_BLUE, "[TXT] CustomNpcCommand loaded successfully (%d records) [%s]", (int)this->m_CustomNpcCommand.size(), path);
 
 	delete lpMemScript;
 }

@@ -10,11 +10,80 @@
 #include "CustomRanking.h"
 #include "ObjectManager.h"
 #include "Notice.h"
+#include "Log.h"
 
 CCustomRanking gCustomRanking;
 
 void CCustomRanking::Load(char* path)
 {
+	char xmlPath[MAX_PATH] = { 0 };
+	const char* sourcePath = path;
+	bool loadXml = false;
+	const char* ext = strrchr(path, '.');
+
+	if (ext != 0 && _stricmp(ext, ".xml") == 0)
+	{
+		loadXml = true;
+	}
+	else if (ext != 0 && _stricmp(ext, ".txt") == 0)
+	{
+		strcpy_s(xmlPath, path);
+		char* xmlExt = strrchr(xmlPath, '.');
+
+		if (xmlExt != 0)
+		{
+			strcpy_s(xmlExt, 5, ".xml");
+			FILE* file = 0;
+
+			if (fopen_s(&file, xmlPath, "r") == 0 && file != 0)
+			{
+				fclose(file);
+				sourcePath = xmlPath;
+				loadXml = true;
+			}
+		}
+	}
+
+	if (loadXml != 0)
+	{
+		pugi::xml_document file;
+		pugi::xml_parse_result res = file.load_file(sourcePath);
+
+		if (res.status != pugi::status_ok)
+		{
+			ErrorMessageBox("Error load fail: %s", sourcePath);
+			return;
+		}
+
+		for (int n = 0; n < MAX_RANK; n++)
+		{
+			this->r_Data[n];
+		}
+
+		this->m_count = 0;
+
+		pugi::xml_node root = file.child("CustomRanking");
+
+		for (pugi::xml_node leaf = root.child("Info"); leaf; leaf = leaf.next_sibling("Info"))
+		{
+			int index = leaf.attribute("Index").as_int();
+
+			if (index < 0 || index >= MAX_RANK)
+			{
+				continue;
+			}
+
+			strcpy_s(this->r_Data[index].Name, leaf.attribute("Name").as_string());
+			strcpy_s(this->r_Data[index].Col1, leaf.attribute("Col1").as_string());
+			strcpy_s(this->r_Data[index].Col2, leaf.attribute("Col2").as_string());
+
+			this->m_count++;
+		}
+
+		LogAdd(LOG_BLUE, "[XML] CustomRanking loaded successfully (%d records) [%s]", this->m_count, sourcePath);
+
+		return;
+	}
 
 	CMemScript* lpMemScript = new CMemScript;
 
@@ -75,6 +144,8 @@ void CCustomRanking::Load(char* path)
 	{
 		ErrorMessageBox(lpMemScript->GetLastError());
 	}
+
+	LogAdd(LOG_BLUE, "[TXT] CustomRanking loaded successfully (%d records) [%s]", this->m_count, path);
 
 	delete lpMemScript;
 }

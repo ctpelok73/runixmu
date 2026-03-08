@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="CustomRankUser">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Info" maxOccurs="unbounded" minOccurs="0">
+          <xs:complexType>
+            <xs:attribute name="Index" type="xs:int" use="required"/>
+            <xs:attribute name="Name" type="xs:string" use="required"/>
+            <xs:attribute name="ResetMin" type="xs:int" use="required"/>
+            <xs:attribute name="ResetMax" type="xs:int" use="required"/>
+            <xs:attribute name="Coin1" type="xs:int" use="required"/>
+            <xs:attribute name="Coin2" type="xs:int" use="required"/>
+            <xs:attribute name="Coin3" type="xs:int" use="required"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

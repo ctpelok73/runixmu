@@ -6,6 +6,7 @@
 #include "ItemMove.h"
 #include "ItemManager.h"
 #include "MemScript.h"
+#include "Log.h"
 #include "Util.h"
 
 CItemMove gItemMove;
@@ -81,6 +82,8 @@ void CItemMove::Load(char* path) // OK
 			this->m_ItemMoveInfo.insert(type_move_item::value_type(info.Index,info));
 		}
 
+		LogAdd(LOG_BLUE, "[XML] ItemMove loaded successfully (%d records) [%s]", (int)this->m_ItemMoveInfo.size(), sourcePath);
+
 		return;
 	}
 
@@ -134,6 +137,8 @@ void CItemMove::Load(char* path) // OK
 	{
 		ErrorMessageBox(lpMemScript->GetLastError());
 	}
+
+	LogAdd(LOG_BLUE, "[TXT] ItemMove loaded successfully (%d records) [%s]", (int)this->m_ItemMoveInfo.size(), path);
 
 	delete lpMemScript;
 }

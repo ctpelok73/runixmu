@@ -16,6 +16,7 @@ GUI-редактор конфигов `GameServer\Data\*.xml` для S6E3.
 - `Validate`: проверка XML и базовых правил S6E3.
 - `Backup`: копия текущего файла в `Data\_backup\yyyyMMdd_HHmm\...`.
 - `Save`: сохраняет текущие значения обратно в XML.
+- `Sync`: проверяет зависимости и зеркалит готовые XML в `GameServer\Data_XML_READY\...`.
 
 ## Правила по файлам
 
@@ -39,3 +40,4 @@ GUI-редактор конфигов `GameServer\Data\*.xml` для S6E3.
 
 ## Примечание
 XSD-шаблоны для первой волны лежат в `Tools\ConfigEditor\Schema`.
+Готовые для выкладки XML автоматически копируются в `GameServer\Data_XML_READY` с сохранением структуры папок (`Move\...`, `Item\...`, `Custom\...`).

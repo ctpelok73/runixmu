@@ -28,6 +28,65 @@ CCustomCommandDescription::~CCustomCommandDescription() // OK
 
 void CCustomCommandDescription::Load(char* path) // OK
 {
+	char xmlPath[MAX_PATH] = { 0 };
+	const char* sourcePath = path;
+	bool loadXml = false;
+	const char* ext = strrchr(path, '.');
+
+	if (ext != 0 && _stricmp(ext, ".xml") == 0)
+	{
+		loadXml = true;
+	}
+	else if (ext != 0 && _stricmp(ext, ".txt") == 0)
+	{
+		strcpy_s(xmlPath, path);
+		char* xmlExt = strrchr(xmlPath, '.');
+
+		if (xmlExt != 0)
+		{
+			strcpy_s(xmlExt, 5, ".xml");
+			FILE* file = 0;
+
+			if (fopen_s(&file, xmlPath, "r") == 0 && file != 0)
+			{
+				fclose(file);
+				sourcePath = xmlPath;
+				loadXml = true;
+			}
+		}
+	}
+
+	if (loadXml != 0)
+	{
+		pugi::xml_document file;
+		pugi::xml_parse_result res = file.load_file(sourcePath);
+
+		if (res.status != pugi::status_ok)
+		{
+			ErrorMessageBox("Error load fail: %s", sourcePath);
+			return;
+		}
+
+		this->m_CustomCommandDescriptionInfo.clear();
+
+		pugi::xml_node root = file.child("CustomCommandDescription");
+
+		for (pugi::xml_node leaf = root.child("Info"); leaf; leaf = leaf.next_sibling("Info"))
+		{
+			CUSTOMCOMMANDDESCRIPTION_INFO info;
+
+			info.Index = leaf.attribute("Index").as_int();
+			strcpy_s(info.Commmand, leaf.attribute("Command").as_string());
+			strcpy_s(info.Description, leaf.attribute("Description").as_string());
+
+			this->m_CustomCommandDescriptionInfo.insert(std::pair<int,CUSTOMCOMMANDDESCRIPTION_INFO>(info.Index,info));
+		}
+
+		LogAdd(LOG_BLUE, "[XML] CustomCommandDescription loaded successfully (%d records) [%s]", (int)this->m_CustomCommandDescriptionInfo.size(), sourcePath);
+
+		return;
+	}
+
 	CMemScript* lpMemScript = new CMemScript;
 
 	if(lpMemScript == 0)
@@ -74,6 +133,8 @@ void CCustomCommandDescription::Load(char* path) // OK
 	{
 		ErrorMessageBox(lpMemScript->GetLastError());
 	}
+
+	LogAdd(LOG_BLUE, "[TXT] CustomCommandDescription loaded successfully (%d records) [%s]", (int)this->m_CustomCommandDescriptionInfo.size(), path);
 
 	delete lpMemScript;
 }

@@ -12,6 +12,7 @@
 #include "MemScript.h"
 #include "Monster.h"
 #include "RandomManager.h"
+#include "Log.h"
 #include "Util.h"
 
 CItemDrop gItemDrop;
@@ -98,6 +99,8 @@ void CItemDrop::Load(char* path) // OK
 			this->m_ItemDropInfo.push_back(info);
 		}
 
+		LogAdd(LOG_BLUE, "[XML] ItemDrop loaded successfully (%d records) [%s]", (int)this->m_ItemDropInfo.size(), sourcePath);
+
 		return;
 	}
 
@@ -173,6 +176,8 @@ void CItemDrop::Load(char* path) // OK
 	{
 		ErrorMessageBox(lpMemScript->GetLastError());
 	}
+
+	LogAdd(LOG_BLUE, "[TXT] ItemDrop loaded successfully (%d records) [%s]", (int)this->m_ItemDropInfo.size(), path);
 
 	delete lpMemScript;
 }
