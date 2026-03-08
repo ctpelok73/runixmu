@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="CustomMonster">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Info" maxOccurs="unbounded" minOccurs="0">
+          <xs:complexType>
+            <xs:attribute name="Index" type="xs:int" use="required"/>
+            <xs:attribute name="MapNumber" type="xs:int" use="required"/>
+            <xs:attribute name="MaxLife" type="xs:int" use="required"/>
+            <xs:attribute name="DamageMin" type="xs:int" use="required"/>
+            <xs:attribute name="DamageMax" type="xs:int" use="required"/>
+            <xs:attribute name="Defense" type="xs:int" use="required"/>
+            <xs:attribute name="AttackRate" type="xs:int" use="required"/>
+            <xs:attribute name="DefenseRate" type="xs:int" use="required"/>
+            <xs:attribute name="ExperienceRate" type="xs:int" use="required"/>
+            <xs:attribute name="KillMessage" type="xs:int" use="required"/>
+            <xs:attribute name="InfoMessage" type="xs:int" use="required"/>
+            <xs:attribute name="RewardValue1" type="xs:int" use="required"/>
+            <xs:attribute name="RewardValue2" type="xs:int" use="required"/>
+            <xs:attribute name="SummonMonster" type="xs:int" use="required"/>
+            <xs:attribute name="SummonMonsterCount" type="xs:int" use="required"/>
+            <xs:attribute name="SummonMonsterRate" type="xs:int" use="required"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

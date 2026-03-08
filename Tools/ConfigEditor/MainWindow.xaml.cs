@@ -29,6 +29,8 @@ public partial class MainWindow : Window
         ["customcommanddescription.xml"] = "CustomCommandDescription.xml: описания команд. Проверяйте уникальность Command и длину Description.",
         ["customranking.xml"] = "CustomRanking.xml: вкладки рейтинга. Проверяйте уникальность Index и названия колонок.",
         ["customrankuser.xml"] = "CustomRankUser.xml: ранги игрока по Reset/MReset/Level. Проверяйте диапазоны ResetMin/ResetMax.",
+        ["custommonster.xml"] = "CustomMonster.xml: модификаторы монстров. Проверяйте MapNumber, проценты статов и summon-поля.",
+        ["customdeathmessage.xml"] = "CustomDeathMessage.xml: тексты при смерти от монстров. Проверяйте уникальность Index и непустой Text.",
         ["item.xml"] = "Item.xml: основной справочник предметов. Используется сервером напрямую, правки только осознанно.",
         ["eventname.xml"] = "EventName.xml: названия и строки событий для серверных уведомлений.",
         ["mixexpansion.xml"] = "MixExpansion.xml: конфиг расширенного микса GoblinMixExpansion.",
@@ -52,6 +54,8 @@ public partial class MainWindow : Window
         "CustomCommandDescription.xml",
         "CustomRanking.xml",
         "CustomRankUser.xml",
+        "CustomMonster.xml",
+        "CustomDeathMessage.xml",
         "Item.xml",
         "PetItemOption.xml",
         "FlagItemOption.xml",
@@ -208,6 +212,30 @@ public partial class MainWindow : Window
             ["Coin1"] = "Награда Coin1.",
             ["Coin2"] = "Награда Coin2.",
             ["Coin3"] = "Награда Coin3."
+        },
+        ["custommonster.xml"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Index"] = "Класс монстра.",
+            ["MapNumber"] = "Индекс карты, -1 для всех карт.",
+            ["MaxLife"] = "Процент HP монстра, -1 без изменения.",
+            ["DamageMin"] = "Процент минимального урона, -1 без изменения.",
+            ["DamageMax"] = "Процент максимального урона, -1 без изменения.",
+            ["Defense"] = "Процент защиты, -1 без изменения.",
+            ["AttackRate"] = "Процент attack rate, -1 без изменения.",
+            ["DefenseRate"] = "Процент defense rate, -1 без изменения.",
+            ["ExperienceRate"] = "Процент опыта, -1 без изменения.",
+            ["KillMessage"] = "ID сообщения в Message, -1 отключено.",
+            ["InfoMessage"] = "ID личного сообщения, -1 отключено.",
+            ["RewardValue1"] = "Параметр награды 1.",
+            ["RewardValue2"] = "Параметр награды 2.",
+            ["SummonMonster"] = "Класс призываемого монстра, -1 отключено.",
+            ["SummonMonsterCount"] = "Количество призываемых монстров.",
+            ["SummonMonsterRate"] = "Шанс призыва в процентах."
+        },
+        ["customdeathmessage.xml"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Index"] = "Класс монстра.",
+            ["Text"] = "Текст, показываемый игроку при смерти от монстра."
         }
     };
     private readonly DataTable _recordsTable = new();
@@ -232,7 +260,9 @@ public partial class MainWindow : Window
         Path.Combine("Custom", "CustomNpcCommand.xml"),
         Path.Combine("Custom", "CustomCommandDescription.xml"),
         Path.Combine("Custom", "CustomRanking.xml"),
-        Path.Combine("Custom", "CustomRankUser.xml")
+        Path.Combine("Custom", "CustomRankUser.xml"),
+        Path.Combine("Custom", "CustomMonster.xml"),
+        Path.Combine("Custom", "CustomDeathMessage.xml")
     };
     private readonly string[] _itemClassFields =
     {
@@ -491,6 +521,34 @@ public partial class MainWindow : Window
                 ["Coin1"] = "0",
                 ["Coin2"] = "0",
                 ["Coin3"] = "0"
+            })
+        },
+        ["CustomMonster.xml"] = new List<PresetOption>
+        {
+            new("CustomMonster: Без изменений", new Dictionary<string, string>
+            {
+                ["MapNumber"] = "-1",
+                ["MaxLife"] = "-1",
+                ["DamageMin"] = "-1",
+                ["DamageMax"] = "-1",
+                ["Defense"] = "-1",
+                ["AttackRate"] = "-1",
+                ["DefenseRate"] = "-1",
+                ["ExperienceRate"] = "-1",
+                ["KillMessage"] = "-1",
+                ["InfoMessage"] = "-1",
+                ["RewardValue1"] = "0",
+                ["RewardValue2"] = "0",
+                ["SummonMonster"] = "-1",
+                ["SummonMonsterCount"] = "-1",
+                ["SummonMonsterRate"] = "100"
+            })
+        },
+        ["CustomDeathMessage.xml"] = new List<PresetOption>
+        {
+            new("CustomDeathMessage: Базовое сообщение", new Dictionary<string, string>
+            {
+                ["Text"] = "I am very strong monster"
             })
         }
     };
@@ -1632,6 +1690,14 @@ public partial class MainWindow : Window
         {
             ValidateCustomRankUser(document, errors);
         }
+        else if (fileName.Equals("CustomMonster.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateCustomMonster(document, errors);
+        }
+        else if (fileName.Equals("CustomDeathMessage.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateCustomDeathMessage(document, errors);
+        }
         else if (fileName.Equals("Gate.xml", StringComparison.OrdinalIgnoreCase))
         {
             ValidateGate(document, errors);
@@ -1734,6 +1800,24 @@ public partial class MainWindow : Window
                     _mapIndexSet.Contains(map) == false)
                 {
                     errors.Add($"ItemDrop[{index}]: MapNumber={map} not found in MapManager.txt");
+                }
+            }
+        }
+        else if (fileName.Equals("CustomMonster.xml", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var info in document.Root?.Elements("Info") ?? Enumerable.Empty<XElement>())
+            {
+                if (TryInt(info, "Index", out var index) == false)
+                {
+                    continue;
+                }
+
+                if (TryInt(info, "MapNumber", out var map) &&
+                    map != -1 &&
+                    _mapIndexSet.Count > 0 &&
+                    _mapIndexSet.Contains(map) == false)
+                {
+                    errors.Add($"CustomMonster[{index}]: MapNumber={map} not found in MapManager.txt");
                 }
             }
         }
@@ -1857,6 +1941,8 @@ public partial class MainWindow : Window
             fileName.Equals("CustomCommandDescription.xml", StringComparison.OrdinalIgnoreCase) ||
             fileName.Equals("CustomRanking.xml", StringComparison.OrdinalIgnoreCase) ||
             fileName.Equals("CustomRankUser.xml", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Equals("CustomMonster.xml", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Equals("CustomDeathMessage.xml", StringComparison.OrdinalIgnoreCase) ||
             fileName.Equals("ItemDrop.xml", StringComparison.OrdinalIgnoreCase))
         {
             return root.Elements("Info").ToList();
@@ -2355,6 +2441,66 @@ public partial class MainWindow : Window
             if (coin1 < 0 || coin2 < 0 || coin3 < 0)
             {
                 errors.Add($"CustomRankUser[{index}]: negative Coin reward");
+            }
+        }
+    }
+
+    private static void ValidateCustomMonster(XDocument document, List<string> errors)
+    {
+        var infoList = document.Root?.Elements("Info").ToList() ?? new List<XElement>();
+        var indices = new HashSet<(int, int)>();
+
+        foreach (var info in infoList)
+        {
+            if (TryInt(info, "Index", out var index) == false)
+            {
+                errors.Add("CustomMonster: invalid Index");
+                continue;
+            }
+
+            TryInt(info, "MapNumber", out var map);
+            TryInt(info, "SummonMonsterRate", out var summonRate);
+
+            if (indices.Add((index, map)) == false)
+            {
+                errors.Add($"CustomMonster: duplicate Index/MapNumber={index}/{map}");
+            }
+
+            if (map < -1)
+            {
+                errors.Add($"CustomMonster[{index}]: MapNumber < -1");
+            }
+
+            if (summonRate < 0 || summonRate > 100)
+            {
+                errors.Add($"CustomMonster[{index}]: SummonMonsterRate out of range 0..100");
+            }
+        }
+    }
+
+    private static void ValidateCustomDeathMessage(XDocument document, List<string> errors)
+    {
+        var infoList = document.Root?.Elements("Info").ToList() ?? new List<XElement>();
+        var indices = new HashSet<int>();
+
+        foreach (var info in infoList)
+        {
+            if (TryInt(info, "Index", out var index) == false)
+            {
+                errors.Add("CustomDeathMessage: invalid Index");
+                continue;
+            }
+
+            if (indices.Add(index) == false)
+            {
+                errors.Add($"CustomDeathMessage: duplicate Index={index}");
+            }
+
+            var text = info.Attribute("Text")?.Value ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                errors.Add($"CustomDeathMessage[{index}]: empty Text");
             }
         }
     }

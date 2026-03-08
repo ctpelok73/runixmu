@@ -9,6 +9,7 @@
 #include "Message.h"
 #include "Monster.h"
 #include "Notice.h"
+#include "Log.h"
 #include "Util.h"
 
 CCustomMonster gCustomMonster;
@@ -28,6 +29,78 @@ CCustomMonster::~CCustomMonster() // OK
 
 void CCustomMonster::Load(char* path) // OK
 {
+	char xmlPath[MAX_PATH] = { 0 };
+	const char* sourcePath = path;
+	bool loadXml = false;
+	const char* ext = strrchr(path, '.');
+
+	if (ext != 0 && _stricmp(ext, ".xml") == 0)
+	{
+		loadXml = true;
+	}
+	else if (ext != 0 && _stricmp(ext, ".txt") == 0)
+	{
+		strcpy_s(xmlPath, path);
+		char* xmlExt = strrchr(xmlPath, '.');
+
+		if (xmlExt != 0)
+		{
+			strcpy_s(xmlExt, 5, ".xml");
+			FILE* file = 0;
+
+			if (fopen_s(&file, xmlPath, "r") == 0 && file != 0)
+			{
+				fclose(file);
+				sourcePath = xmlPath;
+				loadXml = true;
+			}
+		}
+	}
+
+	if (loadXml != 0)
+	{
+		pugi::xml_document file;
+		pugi::xml_parse_result res = file.load_file(sourcePath);
+
+		if (res.status != pugi::status_ok)
+		{
+			ErrorMessageBox("Error load fail: %s", sourcePath);
+			return;
+		}
+
+		this->m_CustomMonsterInfo.clear();
+
+		pugi::xml_node root = file.child("CustomMonster");
+
+		for (pugi::xml_node leaf = root.child("Info"); leaf; leaf = leaf.next_sibling("Info"))
+		{
+			CUSTOM_MONSTER_INFO info;
+
+			info.Index = leaf.attribute("Index").as_int();
+			info.MapNumber = leaf.attribute("MapNumber").as_int();
+			info.MaxLife = leaf.attribute("MaxLife").as_int();
+			info.DamageMin = leaf.attribute("DamageMin").as_int();
+			info.DamageMax = leaf.attribute("DamageMax").as_int();
+			info.Defense = leaf.attribute("Defense").as_int();
+			info.AttackRate = leaf.attribute("AttackRate").as_int();
+			info.DefenseRate = leaf.attribute("DefenseRate").as_int();
+			info.ExperienceRate = leaf.attribute("ExperienceRate").as_int();
+			info.KillMessage = leaf.attribute("KillMessage").as_int();
+			info.InfoMessage = leaf.attribute("InfoMessage").as_int();
+			info.RewardValue1 = leaf.attribute("RewardValue1").as_int();
+			info.RewardValue2 = leaf.attribute("RewardValue2").as_int();
+			info.SummonMonster = leaf.attribute("SummonMonster").as_int();
+			info.SummonMonsterCount = leaf.attribute("SummonMonsterCount").as_int();
+			info.SummonMonsterRate = leaf.attribute("SummonMonsterRate").as_int();
+
+			this->m_CustomMonsterInfo.push_back(info);
+		}
+
+		LogAdd(LOG_BLUE, "[XML] CustomMonster loaded successfully (%d records) [%s]", (int)this->m_CustomMonsterInfo.size(), sourcePath);
+
+		return;
+	}
+
 	CMemScript* lpMemScript = new CMemScript;
 
 	if(lpMemScript == 0)
@@ -100,6 +173,8 @@ void CCustomMonster::Load(char* path) // OK
 	{
 		ErrorMessageBox(lpMemScript->GetLastError());
 	}
+
+	LogAdd(LOG_BLUE, "[TXT] CustomMonster loaded successfully (%d records) [%s]", (int)this->m_CustomMonsterInfo.size(), path);
 
 	delete lpMemScript;
 }
