@@ -101,6 +101,7 @@ namespace SEASON3B
 		void RenderChecked(float x, float y, bool bEnable);
 		void RenderButtons();
 		void change_resolution();
+		void change_windowmode();
 		void change_fontsize();
 		void LoadResolution(const char* filename);
 	private:
@@ -116,6 +117,7 @@ namespace SEASON3B
 		bool m_RenderEquipment;
 		bool m_RenderTerrain;
 		bool m_RenderObjects;
+		bool m_bWindowMode;
 		CNewUIListGroupButton resolutionList;
 		CNewUIListGroupButton fonttextList;
 	};

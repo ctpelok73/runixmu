@@ -15,6 +15,37 @@
 #include "TextClien.h"
 using namespace SEASON3B;
 
+namespace
+{
+	bool IsCommonResolution(const std::string& text)
+	{
+		static const char* kCommonResolutions[] =
+		{
+			"800x600",
+			"1024x768",
+			"1280x720",
+			"1280x800",
+			"1280x1024",
+			"1366x768",
+			"1440x900",
+			"1600x900",
+			"1600x1200",
+			"1680x1050",
+			"1920x1080",
+			"1920x1200",
+		};
+
+		for (const char* resolution : kCommonResolutions)
+		{
+			if (text == resolution)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
@@ -35,6 +66,7 @@ SEASON3B::CNewUIOptionWindow::CNewUIOptionWindow()
 	m_RenderEquipment = true;
 	m_RenderTerrain = true;
 	m_RenderObjects = true;
+	m_bWindowMode = true;
 }
 
 SEASON3B::CNewUIOptionWindow::~CNewUIOptionWindow()
@@ -72,6 +104,8 @@ void SEASON3B::CNewUIOptionWindow::SetButtonInfo()
 	resolutionList.Create(m_Pos.x + 20.f, m_Pos.y + 50.f, 4);
 
 	fonttextList.Create(m_Pos.x + 20.f, m_Pos.y + 175.f, 3);
+
+	m_bWindowMode = gwinhandle->CheckWndMode();
 
 	LoadResolution("Data\\Resolutions.xml");
 }
@@ -139,6 +173,11 @@ bool SEASON3B::CNewUIOptionWindow::UpdateMouseEvent()
 	if (SEASON3B::IsPress(VK_LBUTTON) && CheckMouseIn(RenderFrameX + 210.0, RenderFrameY + 148.0, 15, 15))
 	{
 		m_RenderObjects = !m_RenderObjects;
+	}
+	if (SEASON3B::IsPress(VK_LBUTTON) && CheckMouseIn(RenderFrameX + 210.0, RenderFrameY + 166.0, 15, 15))
+	{
+		m_bWindowMode = !m_bWindowMode;
+		change_windowmode();
 	}
 
 	if (CheckMouseIn(RenderFrameX + 108 - 8, RenderFrameY + 185, 124 + 8, 16))
@@ -253,7 +292,7 @@ float SEASON3B::CNewUIOptionWindow::GetKeyEventOrder()	// 10.f;
 
 void SEASON3B::CNewUIOptionWindow::OpenningProcess()
 {
-
+	m_bWindowMode = gwinhandle->CheckWndMode();
 }
 
 void SEASON3B::CNewUIOptionWindow::ClosingProcess()
@@ -420,6 +459,8 @@ void SEASON3B::CNewUIOptionWindow::RenderContents()
 
 	g_pRenderText->RenderText(RenderFrameX + 100, RenderFrameY + 148, gTextClien.TextClien_Khac[9], 0, 15); //-- Slide Help
 
+	g_pRenderText->RenderText(RenderFrameX + 100, RenderFrameY + 166, "Window Mode", 0, 15);
+
 	g_pRenderText->RenderText(RenderFrameX + 100, RenderFrameY + 175, GlobalText[389]); //-- Volume
 
 	g_pRenderText->RenderText(RenderFrameX + 100, RenderFrameY + 210, GlobalText[1840]); //-- +Effect limitation
@@ -452,6 +493,8 @@ void SEASON3B::CNewUIOptionWindow::RenderButtons()
 	RenderChecked(RenderFrameX + 210.0, RenderFrameY + 130.0, m_RenderTerrain);
 
 	RenderChecked(RenderFrameX + 210.0, RenderFrameY + 148.0, m_RenderObjects);
+
+	RenderChecked(RenderFrameX + 210.0, RenderFrameY + 166.0, m_bWindowMode);
 
 
 	RenderImage(IMAGE_OPTION_VOLUME_BACK, RenderFrameX + 108, RenderFrameY + 185, 124.f, 16.f);
@@ -590,7 +633,12 @@ bool SEASON3B::CNewUIOptionWindow::GetRenderObjects()
 
 void SEASON3B::CNewUIOptionWindow::change_resolution()
 {
-	int index = gwinhandle->GetDisplayIndex(resolutionList.as_string());
+	std::string selectedResolution = resolutionList.as_string();
+	if (selectedResolution.empty())
+	{
+		return;
+	}
+	int index = gwinhandle->GetDisplayIndex(selectedResolution);
 
 	if (m_Resolution != index)
 	{
@@ -646,10 +694,6 @@ void SEASON3B::CNewUIOptionWindow::change_fontsize()
 
 			for (pugi::xml_node child = root.child("Resolution"); child; child = child.next_sibling())
 			{
-				std::string text_name = child.attribute("name").as_string();
-
-				resolutionList.push_back(text_name);
-
 				if (gwinhandle->GetDisplayIndex() == child.attribute("index").as_int())
 				{
 					child.attribute("font_size").set_value(fontsize);
@@ -660,6 +704,27 @@ void SEASON3B::CNewUIOptionWindow::change_fontsize()
 			}
 		}
 	}
+}
+
+void SEASON3B::CNewUIOptionWindow::change_windowmode()
+{
+	int desiredMode = m_bWindowMode ? 1 : 0;
+
+	leaf::CRegKey regkey;
+	regkey.SetKey(leaf::CRegKey::_HKEY_CURRENT_USER, "SOFTWARE\\Webzen\\Mu2\\Config");
+	regkey.WriteDword("WindowMode", desiredMode);
+
+	gwinhandle->ApplyWndMode(m_bWindowMode);
+
+	ClearInput(TRUE);
+	CInput& rInput = CInput::Instance();
+	rInput.Create(gwinhandle->GethWnd(), WindowWidth, WindowHeight);
+	CameraFactorPtr->Init();
+	OpenFont();
+	g_pMoveCommandWindow->SetPos(1, 1);
+	this->SetPos(0, 70);
+	g_pNewUISystem->RenderFrameUpdate(gwinhandle->GetScreenX(), gwinhandle->GetScreenY());
+	g_pNewUI3DRenderMng->Reload3DEffectObject(WindowWidth, WindowHeight);
 }
 
 void SEASON3B::CNewUIOptionWindow::LoadResolution(const char* filename)
@@ -674,19 +739,28 @@ void SEASON3B::CNewUIOptionWindow::LoadResolution(const char* filename)
 
 	int fontSize = 13;
 	int fontindex = 0;
+	int displayIndexPosition = 0;
 
 	pugi::xml_node root = file.child("ResolutionsInfo");
 
+	int resolutionPosition = 0;
 	for (pugi::xml_node child_io = root.child("Resolution"); child_io; child_io = child_io.next_sibling())
 	{
 		std::string text_name = child_io.attribute("name").as_string();
+		if (!IsCommonResolution(text_name))
+		{
+			continue;
+		}
 
 		resolutionList.push_back(text_name);
 
 		if (gwinhandle->GetDisplayIndex() == child_io.attribute("index").as_int())
 		{
 			fontSize = child_io.attribute("font_size").as_int();
+			displayIndexPosition = resolutionPosition;
 		}
+
+		resolutionPosition++;
 	}
 
 	root = file.child("FontSize");
@@ -707,5 +781,5 @@ void SEASON3B::CNewUIOptionWindow::LoadResolution(const char* filename)
 
 	fonttextList.SetCurrent(fontindex);
 
-	resolutionList.SetCurrent(gwinhandle->GetDisplayIndex());
+	resolutionList.SetCurrent(displayIndexPosition);
 }

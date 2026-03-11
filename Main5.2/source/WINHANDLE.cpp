@@ -94,15 +94,15 @@ HWND CWINHANDLE::Create(HINSTANCE hCurrentInst, mu_uint32 RenderSizeX, mu_uint32
 
 		this->hWnd = CreateWindow(
 			windowName,                    // Nombre de la clase
-			windowName,         // Título de la ventana
-			WS_POPUP | WS_VISIBLE,        // Estilo de la ventana (sin bordes, ni título)
-			0, 0,                         // Posición de la ventana (top-left corner)
+			windowName,         // Tï¿½tulo de la ventana
+			WS_POPUP | WS_VISIBLE,        // Estilo de la ventana (sin bordes, ni tï¿½tulo)
+			0, 0,                         // Posiciï¿½n de la ventana (top-left corner)
 			RenderSizeX,
-			RenderSizeY,    // Tamaño de la ventana (ancho y alto)
+			RenderSizeY,    // Tamaï¿½o de la ventana (ancho y alto)
 			NULL,                         // Handle de la ventana padre
-			NULL,                         // Handle del menú
+			NULL,                         // Handle del menï¿½
 			hCurrentInst,                    // Handle de la instancia
-			NULL                          // Parámetros de creación
+			NULL                          // Parï¿½metros de creaciï¿½n
 		);
 	}
 
@@ -323,6 +323,61 @@ void CWINHANDLE::SetWndMode(mu_boolean bActive)
 	WndMode = bActive;
 }
 
+void CWINHANDLE::ApplyWndMode(mu_boolean bActive)
+{
+	WndMode = bActive;
+
+	if (!this->GethWnd())
+	{
+		return;
+	}
+
+	mu_uint32 targetClientWidth = WindowWidth;
+	mu_uint32 targetClientHeight = WindowHeight;
+
+	if (this->CheckWndMode())
+	{
+		ResolutionConfig* conf = this->LoadCurrentConfig();
+		targetClientWidth = conf->width;
+		targetClientHeight = conf->height;
+	}
+	else
+	{
+		targetClientWidth = GetSystemMetrics(SM_CXSCREEN);
+		targetClientHeight = GetSystemMetrics(SM_CYSCREEN);
+	}
+
+	this->InitSize(targetClientWidth, targetClientHeight);
+
+	RECT rc = { 0, 0, (LONG)targetClientWidth, (LONG)targetClientHeight };
+	DWORD style = 0;
+
+	if (this->CheckWndMode())
+	{
+		style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_BORDER | WS_CLIPCHILDREN;
+		AdjustWindowRect(&rc, style, FALSE);
+		SetWindowLongPtr(this->GethWnd(), GWL_STYLE, (LONG_PTR)style);
+		SetWindowLongPtr(this->GethWnd(), GWL_EXSTYLE, 0);
+
+		int width = rc.right - rc.left;
+		int height = rc.bottom - rc.top;
+		int posX = (GetSystemMetrics(SM_CXSCREEN) - width) / 2;
+		int posY = (GetSystemMetrics(SM_CYSCREEN) - height) / 2;
+		SetWindowPos(this->GethWnd(), NULL, posX, posY, width, height, SWP_FRAMECHANGED | SWP_NOZORDER | SWP_SHOWWINDOW);
+	}
+	else
+	{
+		style = WS_POPUP | WS_VISIBLE;
+		SetWindowLongPtr(this->GethWnd(), GWL_STYLE, (LONG_PTR)style);
+		SetWindowLongPtr(this->GethWnd(), GWL_EXSTYLE, 0);
+		SetWindowPos(this->GethWnd(), HWND_TOP, 0, 0, targetClientWidth, targetClientHeight, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+	}
+
+	ShowWindow(this->GethWnd(), SW_RESTORE);
+	SetForegroundWindow(this->GethWnd());
+	SetFocus(this->GethWnd());
+}
+
 mu_boolean CWINHANDLE::CheckWndMode()
 {
 	return WndMode;
@@ -352,7 +407,12 @@ mu_uint8 CWINHANDLE::GetDisplayIndex()
 
 mu_uint8 CWINHANDLE::GetDisplayIndex(const std::string text_name)
 {
-	return res_setting.FindInfoByIndex(text_name);
+	int index = res_setting.FindInfoByIndex(text_name);
+	if (index < 0)
+	{
+		return 0;
+	}
+	return (mu_uint8)index;
 }
 
 mu_float CWINHANDLE::GetScreenX()
@@ -475,7 +535,7 @@ LONG CWINHANDLE::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				gwinhandle->Change_State(false);
 				break;
 			case WM_RBUTTONDOWN:
-				// Mostrar menú contextual si lo necesitas
+				// Mostrar menï¿½ contextual si lo necesitas
 				break;
 			}
 		}

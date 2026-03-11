@@ -39,6 +39,7 @@ public:
 	mu_boolean CheckWndActive();
 	void UpdateWndActive();
 	void SetWndMode(mu_boolean bActive);
+	void ApplyWndMode(mu_boolean bActive);
 	mu_boolean CheckWndMode();
 	void SetDisplayIndex(mu_uint8 index, mu_boolean Fontload = true);
 	mu_uint8 GetDisplayIndex();

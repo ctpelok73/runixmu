@@ -2,6 +2,37 @@
 #include "pugixml.hpp"
 #include "Resolutions.h"
 
+namespace
+{
+	bool IsCommonResolution(const std::string& text)
+	{
+		static const char* kCommonResolutions[] =
+		{
+			"800x600",
+			"1024x768",
+			"1280x720",
+			"1280x800",
+			"1280x1024",
+			"1366x768",
+			"1440x900",
+			"1600x900",
+			"1600x1200",
+			"1680x1050",
+			"1920x1080",
+			"1920x1200",
+		};
+
+		for (const char* resolution : kCommonResolutions)
+		{
+			if (text == resolution)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
 ResolutionConfig::ResolutionConfig()
 {
 	text_name = "800x600";
@@ -23,8 +54,16 @@ void ResolutionConfig::ParseResolution()
 	size_t xPos = text_name.find('x');
 	if (xPos != std::string::npos)
 	{
-		width = std::stoi(text_name.substr(0, xPos));       // Extrae el ancho
-		height = std::stoi(text_name.substr(xPos + 1));     // Extrae la altura
+		try
+		{
+			width = std::stoi(text_name.substr(0, xPos));
+			height = std::stoi(text_name.substr(xPos + 1));
+		}
+		catch (...)
+		{
+			width = 0;
+			height = 0;
+		}
 	}
 	else
 	{
@@ -62,6 +101,10 @@ void CSettings::Load(const char* filename)
 
 		data_info.index = child_io.attribute("index").as_int();
 		data_info.text_name = child_io.attribute("name").as_string();
+		if (!IsCommonResolution(data_info.text_name))
+		{
+			continue;
+		}
 		data_info.fontsize = child_io.attribute("font_size").as_int();
 		data_info.view_far = child_io.attribute("view_far").as_float();
 		data_info.view_far_increase = child_io.attribute("view_far_increase").as_float();
@@ -113,7 +156,7 @@ int CSettings::FindInfoByIndex(const std::string text_name)
 		return (*it).index;
 	}
 
-	return -1;
+	return data_default.index;
 }
 
 void CSettings::FindResolutionByIndex(int idx, unsigned int* width, unsigned int* height, int* fontsize)
