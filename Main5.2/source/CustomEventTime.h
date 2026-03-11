@@ -61,6 +61,7 @@ public:
 	int Arena;
 	std::vector<CUSTOM_EVENTTIME_DATA> mNewDataEventTime;
 	int MaxListData;
+	int m_HoverRow;
 	void OnOffWindow();
 	static CCustomEventTime* Instance();
 
