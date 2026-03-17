@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include "w_PetActionRound.h"
 #include "ZzzAI.h"
+#include "ZzzEffect.h"
 
 PetActionRoundPtr PetActionRound::Make()
 {
@@ -53,5 +54,33 @@ bool PetActionRound::Move(OBJECT* obj, CHARACTER* Owner, int targetKey, double t
 
 bool PetActionRound::Effect(OBJECT* obj, CHARACTER* Owner, int targetKey, double tick, bool bForceRender)
 {
-	return false;
+	if (NULL == obj || NULL == Owner) return FALSE;
+
+	BMD* b = gmClientModels->GetModel(obj->Type);
+	if (NULL == b) return FALSE;
+
+	vec3_t Position, vRelativePos, Light;
+	float fRad = ((3.14f / 2500.0f) * fmodf(tick, 2500));
+	float fLumi = sinf(fRad) * 0.2f + 0.8f;
+
+	VectorCopy(obj->Position, b->BodyOrigin);
+	Vector(0.f, 0.f, 0.f, vRelativePos);
+
+	b->Animation(BoneTransform, obj->AnimationFrame, obj->PriorAnimationFrame, obj->PriorAction, obj->Angle, obj->HeadAngle);
+
+	b->TransformPosition(BoneTransform[1], vRelativePos, Position, false);
+	Vector(0.7f * fLumi, 0.4f * fLumi, 1.0f * fLumi, Light);
+	CreateSprite(BITMAP_LIGHTMARKS_FOREIGN, Position, 1.0f, Light, obj);
+	CreateSprite(BITMAP_FLARE, Position, 0.5f, Light, obj);
+
+	b->TransformPosition(BoneTransform[2], vRelativePos, Position, false);
+	Vector(0.5f * fLumi, 0.6f * fLumi, 1.0f * fLumi, Light);
+	CreateSprite(BITMAP_LIGHT, Position, 1.2f, Light, obj);
+
+	VectorCopy(obj->Position, Position);
+	Position[2] += 20.0f;
+	Vector(0.6f * fLumi, 0.6f * fLumi, 1.0f * fLumi, Light);
+	CreateParticleSync(BITMAP_SMOKE, Position, obj->Angle, Light, 67, 0.8f);
+
+	return TRUE;
 }

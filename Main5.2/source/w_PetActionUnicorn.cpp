@@ -268,6 +268,47 @@ bool PetActionUnicorn::Effect(OBJECT* obj, CHARACTER* Owner, int targetKey, doub
 	CreateParticleSync(BITMAP_SMOKELINE1, Position, obj->Angle, Light, 4, 0.6f, obj);
 	CreateParticleSync(BITMAP_SMOKELINE2, Position, obj->Angle, Light, 4, 0.6f, obj);
 	CreateParticleSync(BITMAP_SMOKELINE3, Position, obj->Angle, Light, 4, 0.6f, obj);
+
+	vec3_t LightAura;
+	vec3_t PosAura;
+
+	VectorCopy(obj->Position, PosAura);
+	PosAura[2] += 30.0f;
+
+	Vector(1.0f, 0.2f, 0.2f, LightAura);
+	CreateEffectSync(BITMAP_PIN_LIGHT, PosAura, obj->Angle, LightAura, 4, obj, -1, 0, 0, 0, 1.3f);
+
+	vec3_t Light2;
+	vec3_t Position2;
+	vec3_t vRelative2;
+
+	Vector(0.f, 0.f, 0.f, vRelative2);
+
+	Vector(0.7f, 0.2f, 0.6f, Light2);
+	b->TransformPosition(BoneTransform[3], vRelative2, Position2, false);
+	CreateSprite(BITMAP_LIGHTMARKS_FOREIGN, Position2, 1.8f, Light2, obj);
+	CreateSprite(BITMAP_LIGHTMARKS_FOREIGN, Position2, 1.0f, Light2, obj);
+
+	Vector(0.6f, 0.2f, 0.2f, Light2);
+	b->TransformPosition(BoneTransform[5], vRelative2, Position2, false);
+	Position2[2] -= 25.0f;
+	CreateEffectSync(MODEL_FEATHER_FOREIGN, Position2, obj->Angle, Light2, 4, NULL, -1, 0, 0, 0, 0.4f);
+
+	Vector(1.0f, 0.3f, 0.2f, Light2);
+
+	b->TransformPosition(BoneTransform[45], vRelative2, Position2, false);
+	CreateSprite(BITMAP_FLARE, Position2, 0.7f, Light2, obj);
+
+	b->TransformPosition(BoneTransform[48], vRelative2, Position2, false);
+	CreateSprite(BITMAP_FLARE, Position2, 0.7f, Light2, obj);
+
+	b->TransformPosition(BoneTransform[51], vRelative2, Position2, false);
+	CreateSprite(BITMAP_FLARE, Position2, 0.7f, Light2, obj);
+
+	vec3_t SmokeLight;
+	Vector(0.9f, 0.2f, 0.2f, SmokeLight);
+
+	CreateParticleSync(BITMAP_SMOKE, PosAura, obj->Angle, SmokeLight, 10, 1.6f);
 	return TRUE;
 }
 
