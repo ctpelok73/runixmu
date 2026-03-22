@@ -327,9 +327,6 @@ static bool gmMonsterBmdExists(int monsterIndex)
 
 static void gmRenderMonsterPreview3D(int monsterIndex, float scaleMul, float rotY, float previewX, float previewY, float previewW, float previewH, int actionOverride)
 {
-	const float centerX = previewX + (previewW * 0.5f);
-	const float centerY = previewY + (previewH * 0.5f);
-
 	const int clipX = (int)(previewX * g_fScreenRate_x);
 	const int clipYTop = (int)(previewY * g_fScreenRate_y);
 	const int clipW = (int)(previewW * g_fScreenRate_x);
@@ -369,7 +366,7 @@ static void gmRenderMonsterPreview3D(int monsterIndex, float scaleMul, float rot
 	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
 	glLoadIdentity();
-	glViewport2(clipX, clipYTop, clipW, clipH);
+	glViewport2(clipX, clipY, clipW, clipH);
 	gluPerspective2(fovDeg, (float)(clipW) / (float)(clipH), previewNear, previewFar);
 
 	glMatrixMode(GL_MODELVIEW);
@@ -378,7 +375,9 @@ static void gmRenderMonsterPreview3D(int monsterIndex, float scaleMul, float rot
 	GetOpenGLMatrix(CameraMatrix);
 
 	vec3_t target;
-	CreateScreenVector((int)centerX, (int)centerY, target, false, false);
+	const int stableCenterX = (int)((WindowWidth * 0.5f) / g_fScreenRate_x);
+	const int stableCenterY = (int)((WindowHeight * 0.5f) / g_fScreenRate_y);
+	CreateScreenVector(stableCenterX, stableCenterY, target, false, false);
 
 	vec3_t direction;
 	vec3_t position;
