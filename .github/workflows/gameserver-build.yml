@@ -1,0 +1,64 @@
+name: GameServer Build Artifact (Self-Hosted)
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: Build configuration
+        required: true
+        default: Release
+        type: choice
+        options:
+          - Release
+          - Debug
+      platform:
+        description: Build platform
+        required: true
+        default: Win32
+        type: choice
+        options:
+          - Win32
+          - x64
+
+jobs:
+  build-gameserver:
+    runs-on:
+      - self-hosted
+      - windows
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore NuGet
+        run: nuget restore GameServer/GameServer.sln
+
+      - name: Resolve output directory
+        shell: pwsh
+        run: |
+          if ('${{ github.event.inputs.platform }}' -eq 'x64') {
+            "BUILD_OUTPUT=GameServer/GameServer/x64/${{ github.event.inputs.configuration }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          }
+          else {
+            "BUILD_OUTPUT=GameServer/GameServer/${{ github.event.inputs.configuration }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          }
+
+      - name: Build GameServer
+        run: >
+          msbuild GameServer/GameServer.sln
+          /m
+          /p:Configuration=${{ github.event.inputs.configuration }}
+          /p:Platform="${{ github.event.inputs.platform }}"
+
+      - name: Upload GameServer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GameServer-${{ github.sha }}-${{ github.event.inputs.configuration }}-${{ github.event.inputs.platform }}
+          path: |
+            ${{ env.BUILD_OUTPUT }}/GameServer.exe
+            ${{ env.BUILD_OUTPUT }}/*.dll
+            ${{ env.BUILD_OUTPUT }}/*.pdb
+          if-no-files-found: error
